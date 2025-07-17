@@ -214,18 +214,23 @@ export class PrintTemplate {
 
         console.log(`Receipt content dimensions: ${width}x${height}`);
 
-        // Check if modern-screenshot is available
-        if (typeof modernScreenshot === 'undefined') {
-            console.error('modern-screenshot library is required but not loaded');
-            throw new Error('modern-screenshot library is required');
+        // Check if html2canvas is available
+        if (typeof html2canvas !== 'function') {
+            console.error('html2canvas library is required but not loaded');
+            throw new Error('html2canvas library is required');
         }
 
         // Capture the receipt content as PNG - capture only the container, not the body
-        const pngDataUrl = await modernScreenshot.domToPng(receiptContent, {
-            width: width,
-            height: height,
+        const receiptCanvas = await html2canvas(receiptContent, {
             backgroundColor: '#FFFFFF',
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            logging: false
         });
+        
+        // Convert canvas to data URL
+        const pngDataUrl = receiptCanvas.toDataURL('image/png');
 
         // // Open preview window
         // this._openPreviewWindow(pngDataUrl, receiptContent);
@@ -257,23 +262,23 @@ export class PrintTemplate {
         const printerWidthPx = 384;
 
         // Create canvas with full printer width
-        const canvas = document.createElement('canvas');
+        const processingCanvas = document.createElement('canvas');
 
         // Use the content width we already have for scaling calculation
         const scaleFactor = printerWidthPx / width;
 
-        canvas.width = printerWidthPx;
-        canvas.height = Math.round(height * scaleFactor);
+        processingCanvas.width = printerWidthPx;
+        processingCanvas.height = Math.round(height * scaleFactor);
 
-        const ctx = canvas.getContext('2d');
+        const ctx = processingCanvas.getContext('2d');
         ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, processingCanvas.width, processingCanvas.height);
 
         // Draw image scaled to fill width
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, processingCanvas.width, processingCanvas.height);
 
         // Apply contrast enhancement
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, processingCanvas.width, processingCanvas.height);
         const pixels = imageData.data;
 
         // Enhance contrast for better printing
@@ -290,15 +295,15 @@ export class PrintTemplate {
         ctx.putImageData(imageData, 0, 0);
 
         // Calculate bytes per line for the printer
-        const widthBytes = Math.ceil(canvas.width / 8);
+        const widthBytes = Math.ceil(processingCanvas.width / 8);
 
         // Pre-allocate the buffer for better performance
-        const monochromeData = new Uint8Array(widthBytes * canvas.height);
+        const monochromeData = new Uint8Array(widthBytes * processingCanvas.height);
 
         // Convert RGBA to 1-bit monochrome with improved contrast
-        for (let y = 0; y < canvas.height; y++) {
-            for (let x = 0; x < canvas.width; x++) {
-                const pixelIndex = (y * canvas.width + x) * 4;
+        for (let y = 0; y < processingCanvas.height; y++) {
+            for (let x = 0; x < processingCanvas.width; x++) {
+                const pixelIndex = (y * processingCanvas.width + x) * 4;
                 // Calculate grayscale value with better weighting for human perception
                 const grayscale =
                     0.299 * pixels[pixelIndex] +
@@ -320,7 +325,7 @@ export class PrintTemplate {
 
         // Set image dimensions
         commands.push(widthBytes & 0xFF, (widthBytes >> 8) & 0xFF); // xL, xH - width bytes
-        commands.push(canvas.height & 0xFF, (canvas.height >> 8) & 0xFF); // yL, yH - height pixels
+        commands.push(processingCanvas.height & 0xFF, (processingCanvas.height >> 8) & 0xFF); // yL, yH - height pixels
 
         // Add the monochrome image data
         for (let i = 0; i < monochromeData.length; i++) {

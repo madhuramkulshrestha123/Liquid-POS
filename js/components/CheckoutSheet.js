@@ -1037,24 +1037,25 @@ export function CheckoutSheet({ cart, clearCallback, tableId, checkout, orderId,
             // Wait for layout to stabilize
             await new Promise(resolve => setTimeout(resolve, 200));
 
-            // Get content dimensions
-            const width = receiptContent.offsetWidth || 300;
-            const height = receiptContent.offsetHeight || 500;
-
-            // Ensure modernScreenshot is available
-            if (!modernScreenshot) {
-                throw new Error("Modern Screenshot library not available");
+            // Check if html2canvas is available
+            if (typeof html2canvas !== 'function') {
+                throw new Error("html2canvas library not available. Please refresh the page and try again.");
             }
 
             // Capture the receipt content as PNG with error handling
             let pngDataUrl;
             try {
-                pngDataUrl = await modernScreenshot.domToPng(receiptContent, {
-                    width: width,
-                    height: height,
+                // Use html2canvas to capture the receipt
+                const canvas = await html2canvas(receiptContent, {
                     backgroundColor: '#FFFFFF',
                     scale: 2, // Higher resolution for better quality
+                    useCORS: true,
+                    allowTaint: true,
+                    logging: false
                 });
+                
+                // Convert canvas to data URL
+                pngDataUrl = canvas.toDataURL('image/png');
             } catch (screenshotError) {
                 console.error("Error capturing screenshot:", screenshotError);
                 throw new Error("Failed to generate bill image: " + (screenshotError.message || "Screenshot error"));

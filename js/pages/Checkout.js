@@ -41,9 +41,19 @@ export function CheckoutSheet({ order, onClose }) {
                 label: OrderStatus.PLACED,
                 date: new Date()
             };
+            // Get current order data
+            const orderDoc = await order.ref.get();
+            const orderData = orderDoc.data();
+            
+            // Get current status array or create empty one
+            const currentStatus = orderData.status || [];
+            
+            // Add new status
+            const updatedStatus = [...currentStatus, placedStatus];
+            
             await order.ref.update({
                 currentStatus: placedStatus,
-                status: sdk.fieldValue.arrayUnion(placedStatus)
+                status: updatedStatus
             });
             // --- End status update ---
 

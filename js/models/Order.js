@@ -408,9 +408,19 @@ export class MOrder {
         });
 
         if (newStatuses.length > 0) {
+            // Get current document data
+            const orderDoc = await this.ref.get();
+            const orderData = orderDoc.data();
+            
+            // Get current status array or create empty one
+            const currentStatus = orderData.status || [];
+            
+            // Add new statuses
+            const updatedStatus = [...currentStatus, ...newStatuses];
+            
             await this.ref.update({
                 currentStatus: newStatuses[newStatuses.length - 1],
-                status: sdk.fieldValue.arrayUnion(...newStatuses)
+                status: updatedStatus
             });
 
             await this.reload();

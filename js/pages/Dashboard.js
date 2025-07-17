@@ -1183,14 +1183,83 @@ export default function Dashboard() {
                 statusCount: orderData.status?.length || 0
             });
 
-            // Create status entry for kitchen processing - use KITCHEN status to be consistent with OrderRoom
+            // Open a modal to select a table
+            ModalManager.createCenterModal({
+                id: 'select-table-modal',
+                title: 'Select Table for Order',
+                content: `
+                    <div class="p-4">
+                        <p class="mb-4 text-gray-700">Select a table to assign this QR order:</p>
+                        <div id="table-selection-container" class="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[50vh] overflow-y-auto">
+                            <div class="animate-pulse flex space-x-4">
+                                <div class="flex-1 space-y-4 py-1">
+                                    <div class="h-20 bg-gray-200 rounded"></div>
+                                    <div class="h-20 bg-gray-200 rounded"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                actions: [
+                    {
+                        label: 'Cancel',
+                        type: 'secondary',
+                        onClick: (modalControl) => {
+                            modalControl.close();
+                            setLoadingQrOrders(false);
+                        }
+                    }
+                ],
+                onShown: async (modalControl) => {
+                    try {
+                        // Get tables from profile
+                        const tableContainer = document.getElementById('table-selection-container');
+                        
+                        if (!tableContainer) {
+                            throw new Error('Table container element not found');
+                        }
+
+                        // Clear loading state
+                        tableContainer.innerHTML = '';
+
+                        // If no tables available, show message
+                        if (!profileTables || profileTables.length === 0) {
+                            tableContainer.innerHTML = `
+                                <div class="col-span-full text-center py-6">
+                                    <i class="ph ph-table text-gray-400 text-3xl mb-2"></i>
+                                    <p class="text-gray-500">No tables available</p>
+                                </div>
+                            `;
+                            return;
+                        }
+
+                        // Add tables to the container
+                        profileTables.forEach(table => {
+                            const tableElement = document.createElement('div');
+                            tableElement.className = 'bg-gradient-to-br from-warm-bg to-white rounded-xl p-3 border border-gray-200 cursor-pointer hover:shadow-md transition-all';
+                            tableElement.innerHTML = `
+                                <div class="flex items-center justify-between mb-2">
+                                    <h3 class="text-sm font-bold truncate max-w-[70%]">${table.title}</h3>
+                                    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-white to-white/80 flex items-center justify-center shadow-sm">
+                                        <i class="ph ph-table text-red-500 text-sm"></i>
+                                    </div>
+                                </div>
+                            `;
+                            
+                            // Add click handler
+                            tableElement.addEventListener('click', async () => {
+                                try {
+                                    modalControl.close();
+                                    
+                                    // Create status entry for kitchen processing
             const statusEntry = {
                 label: 'KITCHEN',
                 date: new Date()
             };
 
-            // Update the order status
+                                    // Update the order status AND assign to table
             await orderRef.update({
+                                        tableId: table.id || table.title, // Use title as fallback id
                 currentStatus: statusEntry,
                 // Use SDK's fieldValue.arrayUnion instead of firebase.firestore
                 status: sdk.fieldValue.arrayUnion(statusEntry)
@@ -1208,19 +1277,42 @@ export default function Dashboard() {
             });
 
             // Show success message
-            showToast("Order accepted successfully");
-            console.log(`Order ${orderId} moved to KITCHEN status and will appear in tables/channels`);
+                                    showToast(`Order accepted and assigned to table ${table.title}`);
+                                    console.log(`Order ${orderId} moved to KITCHEN status and assigned to table ${table.title}`);
 
-            // Extra check - force refresh of kitchen orders listener by calling setupKitchenOrdersListener
-            console.log("Refreshing kitchen orders listener to ensure the updated order appears...");
-            if (kitchenOrdersUnsubscribe) {
-                kitchenOrdersUnsubscribe();
-            }
-            setupKitchenOrdersListener();
+                                    // Extra check - force refresh of kitchen orders listener
+                                    console.log("Refreshing kitchen orders listener to ensure the updated order appears...");
+                                    if (kitchenOrdersUnsubscribe) {
+                                        kitchenOrdersUnsubscribe();
+                                    }
+                                    setupKitchenOrdersListener();
+                                } catch (err) {
+                                    console.error('Error assigning order to table:', err);
+                                    showToast(`Failed to assign order to table: ${err.message}`, "error");
+                                } finally {
+                                    setLoadingQrOrders(false);
+                                }
+                            });
+                            
+                            tableContainer.appendChild(tableElement);
+                        });
+                    } catch (err) {
+                        console.error('Error loading tables:', err);
+                        const tableContainer = document.getElementById('table-selection-container');
+                        if (tableContainer) {
+                            tableContainer.innerHTML = `
+                                <div class="col-span-full text-center py-6">
+                                    <i class="ph ph-warning text-red-500 text-3xl mb-2"></i>
+                                    <p class="text-red-500">Error loading tables: ${err.message}</p>
+                                </div>
+                            `;
+                        }
+                    }
+                }
+            });
         } catch (err) {
             console.error('Error accepting order:', err);
             showToast(`Failed to accept order: ${err.message}`, "error");
-        } finally {
             setLoadingQrOrders(false);
         }
     };

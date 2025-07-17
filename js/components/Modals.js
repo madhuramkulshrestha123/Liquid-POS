@@ -2311,11 +2311,26 @@ export function OrderView({ order, tableId, variant, refreshOrders }) {
             // Only complete order if it wasn't a user cancellation of Bluetooth and print was attempted or bill printing is disabled
             if (!userCancelledBluetooth) {
                 const orderRef = sdk.db.collection("Orders").doc(order.id);
+                
+                // Get current document first
+                const orderDoc = await orderRef.get();
+                const orderData = orderDoc.data();
+                
+                // Get current status array or create empty one
+                const currentStatus = orderData.status || [];
+                
+                // Create new status entry
+                const newStatusEntry = {
+                    label: "COMPLETED",
+                    date: new Date()
+                };
+                
+                // Add new status to array
+                const updatedStatus = [...currentStatus, newStatusEntry];
+                
+                // Update the document
                 await orderRef.update({
-                    status: sdk.FieldValue.arrayUnion({
-                        label: "COMPLETED",
-                        date: new Date()
-                    }),
+                    status: updatedStatus,
                     currentStatus: {
                         label: "COMPLETED",
                         date: new Date()
