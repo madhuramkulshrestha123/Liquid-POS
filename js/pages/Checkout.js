@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { PaymentMode } from '../models/Order.js';
+import { OrderStatus } from '../models/OrderStatus.js';
 import { showToast } from '../utils.js';
 import { UserSession } from '../utils/UserSession.js';
 import { sdk } from '../sdk.js';
@@ -34,6 +35,18 @@ export function CheckoutSheet({ order, onClose }) {
             // Update in Firestore
             await order.ref.update(data);
 
+            // --- Place order in QR order section and tag as 'Placed' ---
+            // Set status to PLACED only (not COMPLETED)
+            const placedStatus = {
+                label: OrderStatus.PLACED,
+                date: new Date()
+            };
+            await order.ref.update({
+                currentStatus: placedStatus,
+                status: sdk.fieldValue.arrayUnion(placedStatus)
+            });
+            // --- End status update ---
+
             // Print bill (you'll need to implement this)
             // printBill(order);
 
@@ -45,7 +58,7 @@ export function CheckoutSheet({ order, onClose }) {
                 total: order.total
             });
 
-            showToast("Order completed successfully", "success");
+            showToast("Order placed successfully", "success");
             onClose();
         } catch (error) {
             console.error("Checkout error:", error);

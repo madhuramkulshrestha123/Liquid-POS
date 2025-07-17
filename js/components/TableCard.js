@@ -323,7 +323,11 @@ export function OrderGroupTile({ order, onAccept, onReject, onPrintBill }) {
                                 <h3 className="font-medium text-gray-900 line-clamp-1 max-w-[120px] md:max-w-[200px] text-sm md:text-base">
                                     {order.custName || "Guest Customer"}
                                 </h3>
+                                {/* Customer phone number below name */}
                                 <p className="text-xs text-gray-500">
+                                    {order.custPhone || order.customer?.phone || "No phone"}
+                                </p>
+                                <p className="text-xs text-gray-400">
                                     {timeAgo}
                                 </p>
                             </div>

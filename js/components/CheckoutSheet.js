@@ -603,14 +603,10 @@ export function CheckoutSheet({ cart, clearCallback, tableId, checkout, orderId,
                         {
                             label: "PLACED",
                             date: now
-                        },
-                        {
-                            label: "KITCHEN",
-                            date: now
                         }
                     ],
                     currentStatus: {
-                        label: "KITCHEN",
+                        label: "PLACED",
                         date: now
                     },
                     charges: validCharges.map(c => typeof c.toJson === 'function' ? c.toJson() : c),
@@ -644,178 +640,73 @@ export function CheckoutSheet({ cart, clearCallback, tableId, checkout, orderId,
 
             if (!orderId) {
                 // Create new order
+                // --- Set status to PLACED only ---
+                const now = new Date();
+                orderData.status = [
+                    {
+                        label: "PLACED",
+                        date: now
+                    }
+                ];
+                orderData.currentStatus = {
+                    label: "PLACED",
+                    date: now
+                };
                 await orderRef.set(orderData);
             } else {
                 // Update existing order
-                // FIX: Use a manual approach instead of arrayUnion which might be undefined
                 const existingDoc = await orderRef.get();
                 const existingData = existingDoc.exists ? existingDoc.data() : {};
-
-                // Initialize update data object
                 let updateData = {};
-
                 if (checkout) {
-                    // If checkout mode, set paid flag based on payment mode
-                    updateData = {
-                        paid: mode !== 'CREDIT',
-                        payMode: mode
+                    // --- Set status to PLACED only ---
+                    const now = new Date();
+                    updateData.status = [
+                        {
+                            label: "PLACED",
+                            date: now
+                        }
+                    ];
+                    updateData.currentStatus = {
+                        label: "PLACED",
+                        date: now
                     };
-
-                    // Add customer details if a customer is selected
+                    updateData.paid = mode !== 'CREDIT';
+                    updateData.payMode = mode;
                     if (customer) {
                         updateData.custId = customer.id;
                         updateData.custName = customer.name;
                         updateData.custPhone = customer.phone;
                     }
-
-                    // Add bulk tax update information if present
                     if (orderData.taxUpdateInfo) {
                         updateData.taxUpdateInfo = orderData.taxUpdateInfo;
                     }
-
-                    // Add a COMPLETED status if needed
-                    const now = new Date();
-                    const hasCompletedStatus = existingData.status &&
-                        existingData.status.some(s => s.label === "COMPLETED");
-
-                    if (!hasCompletedStatus) {
-                        const newStatus = {
-                            label: "COMPLETED",
-                            date: now
-                        };
-
-                        updateData.status = [...(existingData.status || []), newStatus];
-                        updateData.currentStatus = newStatus;
-                    }
-
-                    // Only add discount if it's set
                     if (discount > 0) {
                         updateData.discount = (existingData.discount || 0) + discount;
                     }
                 } else {
                     // If not in checkout mode, add items to the existing order
                     updateData = {
-                        // Manually merge items arrays rather than using arrayUnion
                         items: [
                             ...(existingData.items || []),
                             ...items.map(e => e.data || e)
                         ],
                         discount: (existingData.discount || 0) + discount
                     };
-
-                    // Add customer details if a customer is selected
                     if (customer) {
                         updateData.custId = customer.id;
                         updateData.custName = customer.name;
                         updateData.custPhone = customer.phone;
                     }
                 }
-
-                // Add instructions if specified
                 if (instructions.trim()) {
                     updateData.instructions = instructions.trim();
                 }
-
                 await orderRef.update(updateData);
             }
 
-            // Show success message for order completion
-            if (checkout) {
-                if (mode === 'CREDIT') {
-                    showToast("Credit order completed!", "success");
-                } else {
-                    showToast("Order completed!", "success");
-                }
-
-                // After checkout is complete, handle bill printing with centralized method
-                let billPrintedSuccessfully = false;
-
-                if (BluetoothPrinting && autoPrint) {
-                    try {
-                        // Use centralized print method that handles all scenarios internally
-                        billPrintedSuccessfully = await BluetoothPrinting.printBill(targetOrderId, mode, autoPrint);
-                    } catch (error) {
-                        console.error("Error calling print bill:", error);
-                        // We continue even if printing fails
-                    }
-                } else if (BluetoothPrinting && UserSession?.seller?.billEnabled !== false) {
-                    // Only show the print dialog if printing is enabled and auto-print is off
-                    try {
-                        // Ask if user wants to print now
-                        if (ModalManager && typeof ModalManager.createDialog === 'function') {
-                            ModalManager.createDialog({
-                                title: "Print Bill?",
-                                content: `
-                                    <div class="mb-4">
-                                        <p class="mb-2">Would you like to print the bill now?</p>
-                                        <p class="text-xs text-gray-500">You can always print or share the bill later.</p>
-                                    </div>
-                                `,
-                                actions: [
-                                    {
-                                        label: "Skip Printing",
-                                        action: () => {
-                                            // Continue without printing
-                                            console.log("User skipped printing");
-                                        }
-                                    },
-                                    {
-                                        label: "Print Bill",
-                                        primary: true,
-                                        action: async () => {
-                                            try {
-                                                await BluetoothPrinting.printBill(targetOrderId, mode, false);
-                                            } catch (printError) {
-                                                console.error("Error printing bill:", printError);
-                                                showToast("Failed to print bill: " + (printError.message || "Unknown error"), "error");
-                                            }
-                                        }
-                                    }
-                                ]
-                            });
-                        }
-                    } catch (error) {
-                        console.error("Error showing print dialog:", error);
-                        // Continue even if showing the dialog fails
-                    }
-                } else if (UserSession?.seller?.billEnabled !== false) {
-                    // If BluetoothPrinting is not available but billing is enabled, show a message
-                    showToast("Printing service not available, but order completed successfully", "info");
-                }
-
-                // Ask the user if they'd like to enable auto-print
-                // but only ask if this preference isn't set yet and if printing is available
-                if (billPrintedSuccessfully && localStorage.getItem('autoPrintPreference') === null && BluetoothPrinting) {
-                    setTimeout(() => {
-                        if (ModalManager && typeof ModalManager.createDialog === 'function') {
-                            ModalManager.createDialog({
-                                title: "Enable Auto Print?",
-                                content: `
-                                    <div class="mb-4">
-                                        <p class="mb-2">Would you like to enable automatic printing without dialog prompts for future bills?</p>
-                                        <p class="text-xs text-gray-500">This will attempt to print directly to your default printer.</p>
-                                    </div>
-                                `,
-                                actions: [
-                                    {
-                                        label: "No, ask each time",
-                                        action: () => toggleAutoPrint(false)
-                                    },
-                                    {
-                                        label: "Yes, enable auto print",
-                                        primary: true,
-                                        action: () => toggleAutoPrint(true)
-                                    }
-                                ]
-                            });
-                        }
-                    }, 1000);
-                }
-            } else {
-                showToast("Order placed successfully!", "success");
-            }
-
-            // Clear cart and close
+            // Show success message for order placement
+            showToast("Order placed successfully!", "success");
             clearCallback && clearCallback();
             onClose && onClose();
         } catch (error) {
