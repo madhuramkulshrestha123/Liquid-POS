@@ -7,9 +7,8 @@ import { useProfile } from '../contexts/ProfileContext.js';
 import { useOrders } from '../contexts/OrderContext.js';
 import { ModalManager } from '../components/ModalManager.js';
 import { parseDate, getTimeDuration } from '../utils.js';
-import { showToast } from '../utils/Toast.js';
+import { showToast } from '../utils/toast.js';
 import { UserSession } from '../utils/UserSession.js';
-import { ModalManager } from '../components/ModalManager.js';
 import { OrderRoom } from '../components/Modals.js';
 import { sdk } from '../sdk.js';
 import { NoOrdersFound, OrderGroupTile } from '../components/TableCard.js';
@@ -746,21 +745,32 @@ export default function Dashboard() {
                 };
             }
 
-            console.log(`[Dashboard Metrics] Calculating metrics from ${allOrders.length} orders`);
+            // Ensure we don't have duplicate orders by filtering based on ID
+            const uniqueOrderIds = new Set();
+            const uniqueOrders = allOrders.filter(order => {
+                if (!order.id) return false;
+                if (uniqueOrderIds.has(order.id)) return false;
+                uniqueOrderIds.add(order.id);
+                return true;
+            });
+
+            console.log(`[Dashboard Metrics] Calculating metrics from ${uniqueOrders.length} unique orders (filtered from ${allOrders.length} total)`);
 
             // Create date objects for today and yesterday
             const now = new Date();
             const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
 
-            // Filter orders for today and yesterday
-            const todayOrders = allOrders.filter(order => {
-                const orderDate = order.date;
+            // Filter orders for today and yesterday - ensure exact match with Analytics page
+            const todayOrders = uniqueOrders.filter(order => {
+                // Get order date, ensuring proper handling of Firebase timestamps
+                const orderDate = order.date?.toDate ? order.date.toDate() : new Date(order.date);
                 return orderDate && orderDate >= startOfToday;
             });
 
-            const yesterdayOrders = allOrders.filter(order => {
-                const orderDate = order.date;
+            const yesterdayOrders = uniqueOrders.filter(order => {
+                // Get order date, ensuring proper handling of Firebase timestamps
+                const orderDate = order.date?.toDate ? order.date.toDate() : new Date(order.date);
                 return orderDate && orderDate >= startOfYesterday && orderDate < startOfToday;
             });
 
@@ -827,8 +837,9 @@ export default function Dashboard() {
                     const completedStatus = order.status.find(s => s.label === "COMPLETED");
 
                     if (placedStatus && completedStatus && placedStatus.date && completedStatus.date) {
-                        const placedDate = placedStatus.date;
-                        const completedDate = completedStatus.date;
+                        // Ensure proper date handling for both timestamps
+                        const placedDate = placedStatus.date?.toDate ? placedStatus.date.toDate() : new Date(placedStatus.date);
+                        const completedDate = completedStatus.date?.toDate ? completedStatus.date.toDate() : new Date(completedStatus.date);
 
                         if (placedDate && completedDate) {
                             const serviceTimeMinutes = (completedDate - placedDate) / (1000 * 60);
@@ -869,8 +880,9 @@ export default function Dashboard() {
                     const completedStatus = order.status.find(s => s.label === "COMPLETED");
 
                     if (placedStatus && completedStatus && placedStatus.date && completedStatus.date) {
-                        const placedDate = placedStatus.date;
-                        const completedDate = completedStatus.date;
+                        // Ensure proper date handling for both timestamps
+                        const placedDate = placedStatus.date?.toDate ? placedStatus.date.toDate() : new Date(placedStatus.date);
+                        const completedDate = completedStatus.date?.toDate ? completedStatus.date.toDate() : new Date(completedStatus.date);
 
                         if (placedDate && completedDate) {
                             const serviceTimeMinutes = (completedDate - placedDate) / (1000 * 60);
@@ -1061,14 +1073,23 @@ export default function Dashboard() {
 
             // Count how many orders are from today for debugging
             const todayOrdersCount = completedOrdersData.filter(order => {
-                const orderDate = order.date;
+                // Ensure proper handling of Firebase timestamps
+                const orderDate = order.date?.toDate ? order.date.toDate() : new Date(order.date);
                 return orderDate && orderDate >= startOfToday;
             }).length;
 
             console.log(`[Dashboard Metrics] Orders from today: ${todayOrdersCount}`);
 
-            // Combine KITCHEN and recent orders for the metrics state
-            const allMetricsOrders = [...kitchenOrdersData, ...completedOrdersData];
+            // Create a Set of IDs from kitchenOrdersData for efficient lookup
+            const kitchenOrderIds = new Set(kitchenOrdersData.map(order => order.id));
+            
+            // Filter out any orders from completedOrdersData that already exist in kitchenOrdersData
+            const uniqueCompletedOrders = completedOrdersData.filter(order => !kitchenOrderIds.has(order.id));
+            
+            console.log(`[Dashboard Metrics] Filtered out ${completedOrdersData.length - uniqueCompletedOrders.length} duplicate orders`);
+
+            // Combine KITCHEN and unique completed orders for the metrics state
+            const allMetricsOrders = [...kitchenOrdersData, ...uniqueCompletedOrders];
             setOrders(allMetricsOrders);
 
             // Calculate metrics immediately instead of waiting for state update
@@ -2103,13 +2124,13 @@ export default function Dashboard() {
 
     // Handle bulk tax update
     const handleBulkTaxUpdate = () => {
-        if (!ModalManagerndow.sdk) {
+        if (!ModalManager || !sdk) {
             showToast("System components not loaded. Please try again later.");
             return;
         }
 
         // Create modal
-        const modal = ModalManagerCenterModal({
+        const modal = ModalManager.createCenterModal({
             id: 'bulk-tax-update-modal',
             title: "Bulk Tax Update",
             content: `
@@ -2425,13 +2446,13 @@ export default function Dashboard() {
 
     // Handle product import
     const handleProductImport = () => {
-        if (!ModalManagerndow.sdk) {
+        if (!ModalManager || !sdk) {
             showToast("System components not loaded. Please try again later.");
             return;
         }
 
         // Create modal
-        const modal = ModalManagerCenterModal({
+        const modal = ModalManager.createCenterModal({
             id: 'import-products-modal',
             title: "Bulk Import Products",
             content: `
@@ -3925,8 +3946,10 @@ export default function Dashboard() {
 
                                                         if (!kitchenStatus || !kitchenStatus.date) return false;
 
-                                                        // Check if it was accepted today
-                                                        const statusDate = parseDate(kitchenStatus.date);
+                                                        // Check if it was accepted today - ensure consistent date handling
+                                                        const statusDate = kitchenStatus.date?.toDate ? 
+                                                            kitchenStatus.date.toDate() : 
+                                                            parseDate(kitchenStatus.date);
                                                         return statusDate && statusDate >= today;
                                                     });
 
@@ -3964,8 +3987,14 @@ export default function Dashboard() {
 
                                                         if (!placedStatus || !kitchenStatus) return;
 
-                                                        const placedDate = parseDate(placedStatus.date);
-                                                        const kitchenDate = parseDate(kitchenStatus.date);
+                                                        // Ensure proper date handling for both timestamps
+                                                        const placedDate = placedStatus.date?.toDate ? 
+                                                            placedStatus.date.toDate() : 
+                                                            parseDate(placedStatus.date);
+                                                            
+                                                        const kitchenDate = kitchenStatus.date?.toDate ? 
+                                                            kitchenStatus.date.toDate() : 
+                                                            parseDate(kitchenStatus.date);
 
                                                         if (!placedDate || !kitchenDate) return;
 

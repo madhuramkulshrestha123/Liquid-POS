@@ -189,6 +189,25 @@ export class MOrder {
                 };
             }
         }
+        
+        // Determine if this is an online order and set source
+        let isOnline = false;
+        let source = null;
+        let orderType = null;
+        
+        if (priceVariant && (priceVariant.toLowerCase() === 'swiggy' || priceVariant.toLowerCase() === 'zomato')) {
+            isOnline = true;
+            source = priceVariant.toLowerCase();
+        } else if (tableId && tableId.toLowerCase().includes('ac') || 
+                   tableId && tableId.toLowerCase().includes('dining')) {
+            isOnline = false;
+            orderType = 'dine-in';
+        } else if (priceVariant && priceVariant.toLowerCase().includes('online')) {
+            isOnline = true;
+        } else if (tableId) {
+            // Default for tables is offline
+            isOnline = false;
+        }
 
         return new MOrder({
             id: id,
@@ -217,7 +236,10 @@ export class MOrder {
             taxUpdateInfo: taxUpdateInfo,
             payMode: PaymentMode.CASH,
             instructions: instructions,
-            date: now
+            date: now,
+            isOnline: isOnline,
+            source: source,
+            orderType: orderType
         });
     }
 
@@ -328,7 +350,7 @@ export class MOrder {
     }
 
     get isOnlineOrder() {
-        return this.priceVariant?.includes("ONLINE") || false;
+        return this.isOnline === true || this.priceVariant?.includes("ONLINE") || this.source === 'swiggy' || this.source === 'zomato' || false;
     }
 
     hasStatus(checkStatus) {

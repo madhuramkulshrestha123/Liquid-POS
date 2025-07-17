@@ -567,6 +567,21 @@ export function CheckoutSheet({ cart, clearCallback, tableId, checkout, orderId,
                 if (mode === 'CREDIT') {
                     orderData.paid = false;
                 }
+                
+                // Set isOnline and source properties based on priceVariant or tableId
+                if (priceVariant && (priceVariant.toLowerCase() === 'swiggy' || priceVariant.toLowerCase() === 'zomato')) {
+                    orderData.isOnline = true;
+                    orderData.source = priceVariant.toLowerCase();
+                } else if (tableId && tableId.toLowerCase().includes('ac') || 
+                           tableId && tableId.toLowerCase().includes('dining')) {
+                    orderData.isOnline = false;
+                    orderData.orderType = 'dine-in';
+                } else if (priceVariant && priceVariant.toLowerCase().includes('online')) {
+                    orderData.isOnline = true;
+                } else if (tableId) {
+                    // Default for tables is offline
+                    orderData.isOnline = false;
+                }
             } catch (err) {
                 console.error("Error creating MOrder:", err);
 
@@ -609,6 +624,21 @@ export function CheckoutSheet({ cart, clearCallback, tableId, checkout, orderId,
                     orderData.custId = customer.id;
                     orderData.custName = customer.name;
                     orderData.custPhone = customer.phone;
+                }
+                
+                // Set isOnline and source properties based on priceVariant or tableId
+                if (priceVariant && (priceVariant.toLowerCase() === 'swiggy' || priceVariant.toLowerCase() === 'zomato')) {
+                    orderData.isOnline = true;
+                    orderData.source = priceVariant.toLowerCase();
+                } else if (tableId && tableId.toLowerCase().includes('ac') || 
+                           tableId && tableId.toLowerCase().includes('dining')) {
+                    orderData.isOnline = false;
+                    orderData.orderType = 'dine-in';
+                } else if (priceVariant && priceVariant.toLowerCase().includes('online')) {
+                    orderData.isOnline = true;
+                } else if (tableId) {
+                    // Default for tables is offline
+                    orderData.isOnline = false;
                 }
             }
 

@@ -435,6 +435,21 @@ export function POS({ title, tableId, order, variant, checkout = false, includeA
                 date: now
             };
 
+            // Set isOnline and source properties based on variant or tableId
+            if (variant && (variant.toLowerCase() === 'swiggy' || variant.toLowerCase() === 'zomato')) {
+                orderData.isOnline = true;
+                orderData.source = variant.toLowerCase();
+            } else if (tableId && tableId.toLowerCase().includes('ac') || 
+                       tableId && tableId.toLowerCase().includes('dining')) {
+                orderData.isOnline = false;
+                orderData.orderType = 'dine-in';
+            } else if (variant && variant.toLowerCase().includes('online')) {
+                orderData.isOnline = true;
+            } else if (tableId) {
+                // Default for tables is offline
+                orderData.isOnline = false;
+            }
+
             // Save to Firestore
             await sdk.db.collection("Orders").doc(orderId).set(
                 order ? { items: finalItems } : orderData,
