@@ -1809,11 +1809,37 @@ export function CheckoutSheet({ cart, clearCallback, tableId, checkout, orderId,
                                 <div className="flex justify-between text-gray-600">
                                     <span>Tax & Charges</span>
                                     <div className="text-right">
-                                        {calculatedCharges.map((charge, index) => (
-                                            <div key={index}>
-                                                {charge.displayName}: {UserSession?.getCurrency()}{charge.calculatedAmount.toFixed(2)}
+                                        {/* Display inclusive taxes first with a note */}
+                                        {calculatedCharges.filter(charge => charge.isInclusive).length > 0 && (
+                                            <div className="mb-1">
+                                                <div className="text-xs text-green-600 font-medium">Inclusive Taxes (included in price):</div>
+                                                {calculatedCharges
+                                                    .filter(charge => charge.isInclusive && charge.calculatedAmount > 0)
+                                                    .map((charge, index) => (
+                                                        <div key={`inc-${index}`} className="text-green-600">
+                                                            {charge.displayName}: {UserSession?.getCurrency()}{charge.calculatedAmount.toFixed(2)}
+                                                        </div>
+                                                    ))}
                                             </div>
-                                        ))}
+                                        )}
+                                        
+                                        {/* Display exclusive taxes that add to the total */}
+                                        {calculatedCharges.filter(charge => !charge.isInclusive).length > 0 && (
+                                            <div>
+                                                {calculatedCharges.filter(charge => !charge.isInclusive).length > 0 && 
+                                                    calculatedCharges.filter(charge => charge.isInclusive).length > 0 && (
+                                                    <div className="text-xs text-gray-600 font-medium mt-1">Exclusive Taxes (added to price):</div>
+                                                )}
+                                                {calculatedCharges
+                                                    .filter(charge => !charge.isInclusive)
+                                                    .map((charge, index) => (
+                                                        <div key={`exc-${index}`}>
+                                                            {charge.displayName}: {UserSession?.getCurrency()}{charge.calculatedAmount.toFixed(2)}
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        )}
+                                        
                                         {calculatedCharges.some(charge => charge.bulkTaxHashtag) && (
                                             <div className="text-xs text-blue-500 mt-1">
                                                 Bulk Tax Update Applied
@@ -1832,7 +1858,7 @@ export function CheckoutSheet({ cart, clearCallback, tableId, checkout, orderId,
 
                             <div className="border-t border-gray-200 pt-2 flex justify-between mt-2">
                                 <span className="font-medium">Grand Total</span>
-                                <span className="font-semibold text-red-600">{UserSession?.getCurrency()}{(cartSubTotal - discount).toFixed(2)}</span>
+                                <span className="font-semibold text-red-600">{UserSession?.getCurrency()}{cartTotal.toFixed(2)}</span>
                             </div>
                         </div>
 

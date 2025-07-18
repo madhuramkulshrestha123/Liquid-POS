@@ -3353,20 +3353,50 @@ export function ProductFormModal({ isOpen, onClose, product = null }) {
     };
 
     const updateCharge = (index, updatedCharge) => {
-        console.log("Updating charge at index", index, "with", updatedCharge);
-        const updatedCharges = [...charges];
+        try {
+            console.log("Updating charge at index", index, "with", updatedCharge);
+            const updatedCharges = [...charges];
 
-        if (index < updatedCharges.length) {
-            updatedCharges[index] = updatedCharge;
-        } else {
-            updatedCharges.push(updatedCharge);
+            // Ensure the charge value is properly formatted
+            if (updatedCharge && updatedCharge.value !== undefined) {
+                // Make sure value is a string
+                updatedCharge.value = String(updatedCharge.value);
+                
+                // Ensure the value format is consistent
+                if (!updatedCharge.value.includes('%') && !isNaN(parseFloat(updatedCharge.value))) {
+                    // It's a numeric value without % - keep as is
+                } else if (updatedCharge.value.includes('%')) {
+                    // It's a percentage - ensure it's properly formatted
+                    const numValue = parseFloat(updatedCharge.value.replace('%', ''));
+                    if (!isNaN(numValue)) {
+                        updatedCharge.value = `${numValue}%`;
+                    } else {
+                        updatedCharge.value = '0%';
+                    }
+                } else {
+                    // Invalid value, default to 0%
+                    updatedCharge.value = '0%';
+                }
+            } else {
+                // Default value if undefined
+                updatedCharge.value = '0%';
+            }
+
+            if (index < updatedCharges.length) {
+                updatedCharges[index] = updatedCharge;
+            } else {
+                updatedCharges.push(updatedCharge);
+            }
+
+            // Only filter charges when actually saving the form, not during editing
+            // This allows users to work with empty or zero-value charges during editing
+            setCharges(updatedCharges);
+
+            console.log("Updated charges:", updatedCharges);
+        } catch (error) {
+            console.error("Error updating charge:", error);
+            // Don't throw the error, just log it to prevent form submission failure
         }
-
-        // Only filter charges when actually saving the form, not during editing
-        // This allows users to work with empty or zero-value charges during editing
-        setCharges(updatedCharges);
-
-        console.log("Updated charges:", updatedCharges);
     };
 
     const removeImage = async (index) => {
@@ -3470,17 +3500,42 @@ export function ProductFormModal({ isOpen, onClose, product = null }) {
                     })),
                 // Serialize charges - properly handle GST and other taxes
                 charges: charges.filter(charge => {
-                    const numValue = parseFloat(String(charge.value).replace('%', ''));
-                    return charge.name.trim() !== '' && !isNaN(numValue) && numValue > 0;
+                    // Skip charges with empty names
+                    if (!charge || !charge.name || charge.name.trim() === '') {
+                        return false;
+                    }
+                    
+                    try {
+                        const valueStr = String(charge.value || '0');
+                        const numValue = parseFloat(valueStr.replace('%', ''));
+                        // Only include charges with valid numeric values
+                        return !isNaN(numValue);
+                    } catch (err) {
+                        console.error("Error processing charge:", err);
+                        return false;
+                    }
                 }).map(charge => {
-                    const isPercentage = String(charge.value).includes('%');
-                    const numValue = parseFloat(String(charge.value).replace('%', ''));
-                    return {
-                        name: charge.name.trim(),
-                        value: numValue,
-                        type: isPercentage ? 'percentage' : 'fixed',
-                        inclusive: Boolean(charge.inclusive)
-                    };
+                    try {
+                        const valueStr = String(charge.value || '0');
+                        const isPercentage = valueStr.includes('%');
+                        const numValue = parseFloat(valueStr.replace('%', ''));
+                        
+                        return {
+                            name: charge.name.trim(),
+                            value: isNaN(numValue) ? 0 : numValue,
+                            type: isPercentage ? 'percentage' : 'fixed',
+                            inclusive: Boolean(charge.inclusive)
+                        };
+                    } catch (err) {
+                        console.error("Error mapping charge:", err);
+                        // Return a safe default if there's an error
+                        return {
+                            name: charge.name.trim(),
+                            value: 0,
+                            type: 'percentage',
+                            inclusive: true
+                        };
+                    }
                 }),
                 // Serialize recipe items
                 recipe: (recipeItems || []).map(item => ({
@@ -4074,14 +4129,23 @@ export function ProductFormModal({ isOpen, onClose, product = null }) {
                                         <div className="relative flex-1">
                                             <input
                                                 type="text"
-                                                value={String(charge.value).replace('%', '')}
+                                                value={charge.value ? String(charge.value).replace('%', '') : '0'}
                                                 onChange={(e) => {
-                                                    const value = e.target.value.replace(/[^0-9.]/g, '');
-                                                    const updatedCharge = {
-                                                        ...charge,
-                                                        value: String(charge.value).includes('%') ? `${value}%` : value
-                                                    };
-                                                    updateCharge(index, updatedCharge);
+                                                    try {
+                                                        const value = e.target.value.replace(/[^0-9.]/g, '');
+                                                        const isPercentage = charge.value && String(charge.value).includes('%');
+                                                        const updatedCharge = {
+                                                            ...charge,
+                                                            value: isPercentage ? `${value}%` : value
+                                                        };
+                                                        updateCharge(index, updatedCharge);
+                                                    } catch (error) {
+                                                        console.error("Error updating charge value:", error);
+                                                        updateCharge(index, {
+                                                            ...charge,
+                                                            value: '0%'
+                                                        });
+                                                    }
                                                 }}
                                                 placeholder="Value"
                                                 className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
@@ -4089,20 +4153,31 @@ export function ProductFormModal({ isOpen, onClose, product = null }) {
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    const isPercentage = String(charge.value).includes('%');
-                                                    const value = String(charge.value).replace('%', '');
-                                                    const updatedCharge = {
-                                                        ...charge,
-                                                        value: isPercentage ? value : `${value}%`
-                                                    };
-                                                    updateCharge(index, updatedCharge);
+                                                    try {
+                                                        const valueStr = String(charge.value || '0');
+                                                        const isPercentage = valueStr.includes('%');
+                                                        const value = valueStr.replace('%', '');
+                                                        const updatedCharge = {
+                                                            ...charge,
+                                                            value: isPercentage ? value : `${value}%`
+                                                        };
+                                                        updateCharge(index, updatedCharge);
+                                                    } catch (error) {
+                                                        console.error("Error toggling percentage/fixed:", error);
+                                                        // Set a safe default
+                                                        updateCharge(index, {
+                                                            ...charge,
+                                                            value: '0%'
+                                                        });
+                                                    }
                                                 }}
-                                                className={`absolute right-0 top-0 bottom-0 px-3 rounded-r-lg flex items-center justify-center ${String(charge.value).includes('%')
+                                                className={`absolute right-0 top-0 bottom-0 px-3 rounded-r-lg flex items-center justify-center ${
+                                                    (charge.value && String(charge.value).includes('%'))
                                                     ? 'bg-red-100 text-red-600'
                                                     : 'bg-green-100 text-green-600'
-                                                    }`}
+                                                }`}
                                             >
-                                                {String(charge.value).includes('%') ? '%' : UserSession?.getCurrency()}
+                                                {(charge.value && String(charge.value).includes('%')) ? '%' : UserSession?.getCurrency()}
                                             </button>
                                         </div>
                                         <button
@@ -4140,11 +4215,23 @@ export function ProductFormModal({ isOpen, onClose, product = null }) {
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        updateCharge(charges.length, {
-                                            name: '',
-                                            value: '0%', // Initialize as string with % for consistency
-                                            inclusive: true
-                                        });
+                                        try {
+                                            updateCharge(charges.length, {
+                                                name: '',
+                                                value: '0%', // Initialize as string with % for consistency
+                                                inclusive: true
+                                            });
+                                        } catch (error) {
+                                            console.error("Error adding new charge:", error);
+                                            // Try again with a safer approach
+                                            const updatedCharges = [...charges];
+                                            updatedCharges.push({
+                                                name: '',
+                                                value: '0%',
+                                                inclusive: true
+                                            });
+                                            setCharges(updatedCharges);
+                                        }
                                     }}
                                     className="flex-1 text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 px-2 rounded flex items-center justify-center"
                                 >
@@ -4154,11 +4241,15 @@ export function ProductFormModal({ isOpen, onClose, product = null }) {
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        // Reset to standard GST rates
-                                        setCharges([
-                                            { name: 'CGST', value: '2.5%', inclusive: true },
-                                            { name: 'SGST', value: '2.5%', inclusive: true }
-                                        ]);
+                                        try {
+                                            // Reset to standard GST rates
+                                            setCharges([
+                                                { name: 'CGST', value: '2.5%', inclusive: true },
+                                                { name: 'SGST', value: '2.5%', inclusive: true }
+                                            ]);
+                                        } catch (error) {
+                                            console.error("Error resetting to standard GST:", error);
+                                        }
                                     }}
                                     className="flex-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-2 rounded flex items-center justify-center"
                                 >

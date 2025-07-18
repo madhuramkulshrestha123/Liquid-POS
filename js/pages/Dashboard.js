@@ -2231,8 +2231,13 @@ export default function Dashboard() {
                     
                     <div class="mb-4">
                         <p class="text-sm text-gray-600 mb-4">
-                            Update tax rates for all products at once. This will replace existing tax configurations for all products.
+                            Update tax rates for all products at once. You can choose to apply taxes as:
                         </p>
+                        <ul class="list-disc pl-5 text-sm text-gray-600 mb-4">
+                            <li><strong>Exclusive:</strong> Tax will be added to the listed price</li>
+                            <li><strong>Inclusive:</strong> Price already includes this tax</li>
+                            <li><strong>Both:</strong> Apply both inclusive and exclusive taxes with different rates</li>
+                        </ul>
                     </div>
                     
                     <div class="mb-6">
@@ -2240,20 +2245,37 @@ export default function Dashboard() {
                             <div class="flex items-start">
                                 <i class="ph ph-warning-circle text-amber-500 mt-0.5 mr-2 text-lg"></i>
                                 <p class="text-sm text-amber-700">
-                                    This action will update tax settings for <strong>all products</strong> in your inventory. 
-                                    Individual product tax configurations will be overwritten.
+                                    This action will update tax settings for <strong>all products</strong> in your inventory.
+                                    <br/><br/>
+                                    When updating taxes, existing taxes of the <strong>same type</strong> (inclusive or exclusive) will be replaced, 
+                                    but taxes of the <strong>other type</strong> will be preserved. This allows you to maintain both inclusive and 
+                                    exclusive taxes on products.
+                                    <br/><br/>
+                                    Use the <strong>Reset to Default</strong> button to set all taxes to zero, effectively removing all tax configurations
+                                    from your products.
                                 </p>
                             </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="flex items-center cursor-pointer">
+                                <input type="checkbox" id="respect-existing-config" class="form-checkbox h-5 w-5 text-red-500 rounded" />
+                                <span class="ml-2 text-sm text-gray-700">Don't update products with existing tax configurations</span>
+                            </label>
                         </div>
                         
                         <div id="tax-config-container" class="space-y-4">
                             <!-- Tax items will be added here -->
                         </div>
                         
-                        <div class="mt-4">
+                        <div class="mt-4 flex justify-between">
                             <button id="add-tax-btn" class="flex items-center text-sm text-blue-600 hover:text-blue-800">
                                 <i class="ph ph-plus-circle mr-1"></i>
                                 Add Another Tax
+                            </button>
+                            <button id="reset-to-default-btn" class="flex items-center text-sm text-red-600 hover:text-red-800">
+                                <i class="ph ph-trash mr-1"></i>
+                                Reset to Default (Zero Tax)
                             </button>
                         </div>
                     </div>
@@ -2272,6 +2294,7 @@ export default function Dashboard() {
                 const errorContainer = document.getElementById('tax-update-error-container');
                 const cancelButton = document.getElementById('cancel-tax-update-btn');
                 const saveButton = document.getElementById('save-tax-update-btn');
+                const respectExistingConfig = document.getElementById('respect-existing-config');
 
                 // Keep track of tax items
                 let taxItems = [];
@@ -2282,8 +2305,10 @@ export default function Dashboard() {
                     const taxItem = {
                         id,
                         name: data.name || '',
-                        value: data.value || '',
-                        type: data.type || 'percentage'
+                        exclusiveValue: data.exclusiveValue || '',
+                        inclusiveValue: data.inclusiveValue || '',
+                        type: data.type || 'percentage',
+                        mode: data.mode || 'both' // 'exclusive', 'inclusive', or 'both'
                     };
 
                     taxItems.push(taxItem);
@@ -2297,44 +2322,73 @@ export default function Dashboard() {
                     taxItemEl.dataset.id = taxItem.id;
 
                     taxItemEl.innerHTML = `
-                                <div class="flex items-center justify-between mb-2">
-                                    <div class="font-medium">Tax Configuration</div>
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="font-medium">Tax Configuration</div>
                             <button class="remove-tax-btn text-gray-400 hover:text-red-500 ${taxItems.length <= 1 ? 'hidden' : ''}">
-                                        <i class="ph ph-trash"></i>
-                                    </button>
-                                </div>
-                                
-                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                    <div>
-                                        <label class="block text-sm text-gray-600 mb-1">Tax Name</label>
-                                        <input 
-                                            type="text" 
+                                <i class="ph ph-trash"></i>
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">Tax Name</label>
+                                <input 
+                                    type="text" 
                                     class="tax-name-input w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" 
-                                            placeholder="e.g. GST" 
+                                    placeholder="e.g. GST" 
                                     value="${taxItem.name}"
-                                        />
-                                    </div>
-                                    <div>
-                                <label class="block text-sm text-gray-600 mb-1">Tax Value</label>
-                                        <input 
-                                            type="number" 
-                                    class="tax-value-input w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" 
-                                            placeholder="e.g. 18" 
-                                            min="0" 
-                                            max="100" 
-                                    value="${taxItem.value}"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm text-gray-600 mb-1">Type</label>
-                                        <select 
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">Type</label>
+                                <select 
                                     class="tax-type-input w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
-                                        >
+                                >
                                     <option value="percentage" ${taxItem.type === 'percentage' ? 'selected' : ''}>Percentage (%)</option>
                                     <option value="fixed" ${taxItem.type === 'fixed' ? 'selected' : ''}>Fixed Amount (${UserSession?.getCurrency()})</option>
-                                        </select>
-                                    </div>
-                                </div>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="block text-sm text-gray-600 mb-1">Apply As</label>
+                            <div class="flex gap-4 mt-1">
+                                <label class="flex items-center cursor-pointer">
+                                    <input type="radio" name="mode-${taxItem.id}" class="tax-mode-input" value="exclusive" ${taxItem.mode === 'exclusive' ? 'checked' : ''} />
+                                    <span class="ml-1 text-sm">Exclusive</span>
+                                </label>
+                                <label class="flex items-center cursor-pointer">
+                                    <input type="radio" name="mode-${taxItem.id}" class="tax-mode-input" value="inclusive" ${taxItem.mode === 'inclusive' ? 'checked' : ''} />
+                                    <span class="ml-1 text-sm">Inclusive</span>
+                                </label>
+                                <label class="flex items-center cursor-pointer">
+                                    <input type="radio" name="mode-${taxItem.id}" class="tax-mode-input" value="both" ${taxItem.mode === 'both' ? 'checked' : ''} />
+                                    <span class="ml-1 text-sm">Both</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">Exclusive Tax Value</label>
+                                <input 
+                                    type="number" 
+                                    class="tax-exclusive-value-input w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" 
+                                    placeholder="e.g. 18" 
+                                    min="0" 
+                                    max="100" 
+                                    value="${taxItem.exclusiveValue}"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">Inclusive Tax Value</label>
+                                <input 
+                                    type="number" 
+                                    class="tax-inclusive-value-input w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" 
+                                    placeholder="e.g. 5" 
+                                    min="0" 
+                                    max="100" 
+                                    value="${taxItem.inclusiveValue}"
+                                />
+                            </div>
+                        </div>
                     `;
 
                     // Add event listener for remove button
@@ -2355,8 +2409,10 @@ export default function Dashboard() {
 
                     // Add event listeners to update tax item data
                     const nameInput = taxItemEl.querySelector('.tax-name-input');
-                    const valueInput = taxItemEl.querySelector('.tax-value-input');
                     const typeInput = taxItemEl.querySelector('.tax-type-input');
+                    const exclusiveValueInput = taxItemEl.querySelector('.tax-exclusive-value-input');
+                    const inclusiveValueInput = taxItemEl.querySelector('.tax-inclusive-value-input');
+                    const modeInputs = taxItemEl.querySelectorAll('.tax-mode-input');
 
                     nameInput.addEventListener('input', () => {
                         const index = taxItems.findIndex(item => item.id === taxItem.id);
@@ -2365,18 +2421,34 @@ export default function Dashboard() {
                         }
                     });
 
-                    valueInput.addEventListener('input', () => {
-                        const index = taxItems.findIndex(item => item.id === taxItem.id);
-                        if (index !== -1) {
-                            taxItems[index].value = valueInput.value;
-                        }
-                    });
-
                     typeInput.addEventListener('change', () => {
                         const index = taxItems.findIndex(item => item.id === taxItem.id);
                         if (index !== -1) {
                             taxItems[index].type = typeInput.value;
                         }
+                    });
+
+                    exclusiveValueInput.addEventListener('input', () => {
+                        const index = taxItems.findIndex(item => item.id === taxItem.id);
+                        if (index !== -1) {
+                            taxItems[index].exclusiveValue = exclusiveValueInput.value;
+                        }
+                    });
+
+                    inclusiveValueInput.addEventListener('input', () => {
+                        const index = taxItems.findIndex(item => item.id === taxItem.id);
+                        if (index !== -1) {
+                            taxItems[index].inclusiveValue = inclusiveValueInput.value;
+                        }
+                    });
+
+                    modeInputs.forEach(input => {
+                        input.addEventListener('change', () => {
+                            const index = taxItems.findIndex(item => item.id === taxItem.id);
+                            if (index !== -1) {
+                                taxItems[index].mode = input.value;
+                        }
+                        });
                     });
 
                     return taxItemEl;
@@ -2397,11 +2469,31 @@ export default function Dashboard() {
                 };
 
                 // Add default tax item
-                addTaxItem({ name: 'GST', value: '18', type: 'percentage' });
+                addTaxItem({ name: 'GST', exclusiveValue: '18', inclusiveValue: '', type: 'percentage', mode: 'exclusive' });
 
                 // Add event listener for add tax button
                 addTaxBtn.addEventListener('click', () => {
                     addTaxItem();
+                });
+                
+                // Add event listener for reset to default button
+                const resetToDefaultBtn = document.getElementById('reset-to-default-btn');
+                resetToDefaultBtn.addEventListener('click', () => {
+                    // Confirm before resetting
+                    if (confirm('Are you sure you want to reset all taxes to zero? This will remove all tax configurations from products when applied.')) {
+                        // Clear existing tax items
+                        taxItems = [];
+                        taxConfigContainer.innerHTML = '';
+                        
+                        // Add a single zero tax item
+                        addTaxItem({ 
+                            name: 'No Tax', 
+                            exclusiveValue: '0', 
+                            inclusiveValue: '0', 
+                            type: 'percentage', 
+                            mode: 'both' 
+                        });
+                    }
                 });
 
                 // Validation function
@@ -2420,27 +2512,41 @@ export default function Dashboard() {
                     // Validate each tax item
                     for (let i = 0; i < taxItems.length; i++) {
                         const taxItem = taxItems[i];
-
                         if (!taxItem.name.trim()) {
                             errorContainer.textContent = `Tax name is required for item #${i + 1}`;
                             errorContainer.classList.remove('hidden');
                             return false;
                         }
-
-                        const taxValue = parseFloat(taxItem.value);
-                        if (isNaN(taxValue) || taxValue < 0) {
-                            errorContainer.textContent = `Please enter a valid tax value for ${taxItem.name}`;
-                            errorContainer.classList.remove('hidden');
-                            return false;
+                        
+                        // Check both values regardless of mode
+                        if (taxItem.mode === 'exclusive' || taxItem.mode === 'both') {
+                            const exclusiveValue = parseFloat(taxItem.exclusiveValue);
+                            if (isNaN(exclusiveValue) || exclusiveValue < 0) {
+                                errorContainer.textContent = `Please enter a valid exclusive tax value for ${taxItem.name}`;
+                                errorContainer.classList.remove('hidden');
+                                return false;
+                            }
+                            if (taxItem.type === 'percentage' && exclusiveValue > 100) {
+                                errorContainer.textContent = `Exclusive percentage value cannot exceed 100% for ${taxItem.name}`;
+                                errorContainer.classList.remove('hidden');
+                                return false;
+                            }
                         }
-
-                        if (taxItem.type === 'percentage' && taxValue > 100) {
-                            errorContainer.textContent = `Percentage value cannot exceed 100% for ${taxItem.name}`;
-                            errorContainer.classList.remove('hidden');
-                            return false;
+                        
+                        if (taxItem.mode === 'inclusive' || taxItem.mode === 'both') {
+                            const inclusiveValue = parseFloat(taxItem.inclusiveValue);
+                            if (isNaN(inclusiveValue) || inclusiveValue < 0) {
+                                errorContainer.textContent = `Please enter a valid inclusive tax value for ${taxItem.name}`;
+                                errorContainer.classList.remove('hidden');
+                                return false;
+                            }
+                            if (taxItem.type === 'percentage' && inclusiveValue > 100) {
+                                errorContainer.textContent = `Inclusive percentage value cannot exceed 100% for ${taxItem.name}`;
+                                errorContainer.classList.remove('hidden');
+                                return false;
+                            }
                         }
                     }
-
                     return true;
                 };
 
@@ -2451,83 +2557,122 @@ export default function Dashboard() {
 
                 saveButton.addEventListener('click', async () => {
                     if (!validateForm()) return;
-
                     try {
-                        // Show loading state
                         saveButton.disabled = true;
                         saveButton.innerHTML = `
                             <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                            Updating...
-                        `;
-
-                        // Prepare tax charges
-                        const taxCharges = taxItems.map(item => ({
-                            name: item.name.trim(),
-                            value: item.type === 'percentage' ? `${parseFloat(item.value)}%` : parseFloat(item.value),
-                            type: item.type,
-                            inclusive: false
-                        }));
-
-                        // Add timestamp and hashtag for tracking bulk tax updates
+                            Updating...`;
+                        const taxCharges = [];
+                        
+                        // Process each tax item
+                        taxItems.forEach(item => {
+                            // Handle "both" mode by creating two separate tax entries
+                            if (item.mode === 'both') {
+                                // Create exclusive tax
+                                if (item.exclusiveValue && parseFloat(item.exclusiveValue) > 0) {
+                                    taxCharges.push({
+                                        name: item.name.trim(),
+                                        value: item.type === 'percentage' ? `${parseFloat(item.exclusiveValue)}%` : parseFloat(item.exclusiveValue),
+                                        type: item.type,
+                                        inclusive: false,
+                                        mode: 'exclusive'
+                                    });
+                                }
+                                
+                                // Create inclusive tax
+                                if (item.inclusiveValue && parseFloat(item.inclusiveValue) > 0) {
+                                    taxCharges.push({
+                                        name: `Inc. ${item.name.trim()}`,
+                                        value: item.type === 'percentage' ? `${parseFloat(item.inclusiveValue)}%` : parseFloat(item.inclusiveValue),
+                                        type: item.type,
+                                        inclusive: true,
+                                        mode: 'inclusive'
+                                    });
+                                }
+                            } else {
+                                // Handle single mode (exclusive or inclusive)
+                                let value = item.mode === 'exclusive' ? item.exclusiveValue : item.inclusiveValue;
+                                // For inclusive taxes, prefix the name with "Inc." to make it clear
+                                const taxName = item.mode === 'inclusive' ? `Inc. ${item.name.trim()}` : item.name.trim();
+                                
+                                taxCharges.push({
+                                    name: taxName,
+                                    value: item.type === 'percentage' ? `${parseFloat(value)}%` : parseFloat(value),
+                                    type: item.type,
+                                    inclusive: item.mode === 'inclusive',
+                                    mode: item.mode
+                                });
+                            }
+                        });
                         const updateTimestamp = new Date().toISOString();
                         const updateHashtag = `#BulkTaxUpdate_${Math.floor(Date.now() / 1000)}`;
-
-                        // Get all products for this seller
                         const productsSnapshot = await sdk.db.collection("Product").get();
-
                         let successCount = 0;
-                        const totalProducts = productsSnapshot.size;
-
-                        // Update each product with the new tax configuration
+                        const respectExisting = respectExistingConfig.checked;
                         const batch = sdk.db.firestore.batch();
-
                         productsSnapshot.forEach(doc => {
                             const productData = doc.data();
-
-                            // Replace existing tax charges with the new ones
-                            productData.charges = taxCharges;
-
-                            // Add metadata for bulk tax update
+                            const hasExistingTaxConfig = productData.charges && Array.isArray(productData.charges) && productData.charges.length > 0;
+                            
+                            // Instead of replacing all charges, we'll update only the ones matching the selected mode
+                            let updatedCharges = [];
+                            
+                            if (hasExistingTaxConfig && !respectExisting) {
+                                // Keep existing charges of the opposite mode
+                                const existingCharges = productData.charges || [];
+                                
+                                // Get the mode we're updating (inclusive or exclusive)
+                                const updatingModes = new Set(taxCharges.map(charge => charge.inclusive ? 'inclusive' : 'exclusive'));
+                                
+                                // Filter existing charges to keep those with different modes than what we're updating
+                                const chargesToKeep = existingCharges.filter(charge => {
+                                    const chargeMode = charge.inclusive ? 'inclusive' : 'exclusive';
+                                    return !updatingModes.has(chargeMode);
+                                });
+                                
+                                // Combine existing charges (of different modes) with new tax charges
+                                updatedCharges = [...chargesToKeep, ...taxCharges];
+                            } else if (respectExisting && hasExistingTaxConfig) {
+                                // Skip this product if we're respecting existing configs
+                                return;
+                            } else {
+                                // No existing charges or not respecting existing, use new charges
+                                updatedCharges = taxCharges;
+                            }
+                            
+                            productData.charges = updatedCharges;
                             productData.taxUpdateInfo = {
                                 timestamp: updateTimestamp,
                                 hashtag: updateHashtag,
                                 isFromBulkUpdate: true
                             };
-
-                            // Update the product in the batch
                             batch.update(doc.ref, {
                                 charges: productData.charges,
                                 taxUpdateInfo: productData.taxUpdateInfo
                             });
                             successCount++;
                         });
-
-                        // Store the bulk tax update info in seller profile for reference
                         if (seller && seller.id) {
                             const sellerRef = sdk.profile;
                             batch.update(sellerRef, {
                                 lastBulkTaxUpdate: {
                                     timestamp: updateTimestamp,
                                     hashtag: updateHashtag,
-                                    taxes: taxCharges
+                                    taxes: taxCharges,
+                                    respectExistingConfig: respectExisting
                                 }
                             });
                         }
-
-                        // Commit all updates
                         await batch.commit();
-
-                        ModalManagerast(`Successfully updated tax for ${successCount} products`);
+                        ModalManager.showToast(`Successfully updated tax for ${successCount} products`);
                         modalControl.close();
                     } catch (error) {
                         console.error('Error updating product taxes:', error);
                         errorContainer.textContent = 'Failed to update product taxes. Please try again.';
                         errorContainer.classList.remove('hidden');
-
-                        // Reset button
                         saveButton.disabled = false;
                         saveButton.textContent = 'Update All Products';
                     }
