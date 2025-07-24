@@ -1650,6 +1650,78 @@ export function CheckoutSheet({ cart, clearCallback, tableId, checkout, orderId,
         }
     };
 
+    // Handle printing bill
+    const handlePrintBill = async () => {
+        if (!orderId) {
+            showToast("Complete payment first to print bill", "error");
+            return;
+        }
+
+        try {
+            setIsGeneratingBill(true);
+            
+            // First update the order with customer information if available
+            if (customer) {
+                try {
+                    console.log("Updating order with customer information:", {
+                        customerId: customer.id,
+                        customerName: customer.name,
+                        customerPhone: customer.phone
+                    });
+                    
+                    const orderRef = sdk.db.collection("Orders").doc(orderId);
+                    await orderRef.update({
+                        custId: customer.id,
+                        custName: customer.name,
+                        custPhone: customer.phone,
+                        customer: {
+                            id: customer.id,
+                            name: customer.name,
+                            phone: customer.phone
+                        }
+                    });
+                    console.log("Updated order with customer information before printing");
+                } catch (updateError) {
+                    console.error("Error updating order with customer info:", updateError);
+                }
+            } else {
+                console.log("No customer selected, will use Guest in the bill");
+            }
+            
+            // Try Bluetooth printing if available
+            if (BluetoothPrinting && BluetoothPrinting.isSupported()) {
+                const printerAlreadyConnected = BluetoothPrinting.connected && BluetoothPrinting.characteristic;
+                
+                if (printerAlreadyConnected) {
+                    showToast("Printing bill using connected printer...", "info");
+                } else if (BluetoothPrinting.lastConnectedDevice) {
+                    showToast(`Connecting to printer ${BluetoothPrinting.lastConnectedDevice.name}...`, "info");
+                } else {
+                    showToast("Select a printer to print bill", "info");
+                }
+
+                // Get order channel and payment mode for proper template variables
+                const channel = priceVariant || 'Default';
+                
+                await BluetoothPrinting.printBill(orderId, paymentMode, false, channel);
+                showToast("Bill printed successfully", "success");
+            } else {
+                // Fallback to browser printing or image generation
+                const billImage = await generateBillImage();
+                if (billImage) {
+                    showToast("Bill generated successfully", "success");
+                } else {
+                    showToast("Failed to generate bill", "error");
+                }
+            }
+        } catch (error) {
+            console.error('Error printing bill:', error);
+            showToast(`Failed to print bill: ${error.message}`, "error");
+        } finally {
+            setIsGeneratingBill(false);
+        }
+    };
+
     if (Object.keys(cart).length === 0) return null;
 
     return (
@@ -2149,6 +2221,20 @@ export function CheckoutSheet({ cart, clearCallback, tableId, checkout, orderId,
                                         <span className="text-sm">Credit</span>
                                     </button>
                                 </div>
+                                
+                                {/* Print Bill Button - Added below payment options */}
+                                <div className="mt-3">
+                                    <button
+                                        onClick={handlePrintBill}
+                                        disabled={isProcessing || !orderId}
+                                        className={`w-full bg-red-500 text-white py-3 px-2 rounded-lg font-medium flex items-center justify-center hover:bg-red-600 transition-colors ${(isProcessing || !orderId) ? 'opacity-75 cursor-not-allowed' : ''}`}
+                                    >
+                                        <i className="ph ph-printer text-xl mr-2" />
+                                        <span>{isProcessing ? 'Printing...' : 'Print Bill'}</span>
+                                    </button>
+                                    {!orderId && <p className="text-xs text-center mt-1 text-gray-500">Complete payment to enable printing</p>}
+                                    {customer && <p className="text-xs text-center mt-1 text-green-500">Will print with customer: {customer.name}</p>}
+                                </div>
 
                                 {/* Credit info if customer selected */}
                                 {customer && typeof customer.balance === 'number' && (
@@ -2213,6 +2299,26 @@ export function CheckoutSheet({ cart, clearCallback, tableId, checkout, orderId,
                                             <div className="mt-2 text-center text-sm text-gray-600 flex items-center justify-center">
                                                 <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mr-2"></div>
                                                 Generating bill image...
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Add a prominent print bill button */}
+                                {orderId && (
+                                    <div className="mt-4">
+                                        <button
+                                            onClick={handlePrintBill}
+                                            disabled={isProcessing || isGeneratingBill}
+                                            className={`w-full py-3.5 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors flex items-center justify-center gap-2 shadow-md ${(isProcessing || isGeneratingBill) ? 'opacity-75 cursor-not-allowed' : ''}`}
+                                        >
+                                            <i className="ph ph-printer text-xl"></i>
+                                            <span className="text-base">{isProcessing || isGeneratingBill ? 'Printing...' : 'Print Bill'}</span>
+                                        </button>
+                                        {customer && (
+                                            <div className="mt-1 text-center text-sm text-green-600 flex items-center justify-center">
+                                                <i className="ph ph-user text-sm mr-1"></i>
+                                                <span>Will print with customer: {customer.name}</span>
                                             </div>
                                         )}
                                     </div>

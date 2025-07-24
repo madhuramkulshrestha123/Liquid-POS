@@ -13,6 +13,25 @@ import { OrderRoom } from '../components/Modals.js';
 import { sdk } from '../sdk.js';
 import { NoOrdersFound, OrderGroupTile } from '../components/TableCard.js';
 
+// Safe logging utility to avoid console.error issues
+const safeLog = {
+    info: (message, ...args) => {
+        try {
+            setTimeout(() => console.log(message, ...args), 0);
+        } catch (e) {}
+    },
+    error: (message, ...args) => {
+        try {
+            setTimeout(() => console.log('[ERROR] ' + message, ...args), 0);
+        } catch (e) {}
+    },
+    warn: (message, ...args) => {
+        try {
+            setTimeout(() => console.log('[WARNING] ' + message, ...args), 0);
+        } catch (e) {}
+    }
+};
+
 // Dashboard Component
 export default function Dashboard() {
     const { profile: seller, tables: profileTables } = useProfile ? useProfile() : { profile: null, tables: [] };
@@ -1183,13 +1202,61 @@ export default function Dashboard() {
                 statusCount: orderData.status?.length || 0
             });
 
+            // Get occupied tables from multiple sources to ensure accuracy
+            const occupiedTableIds = new Set();
+            
+            // 1. Check tables from the tables state which already has occupancy info
+            tables.forEach(table => {
+                if (table.isTable && (table.orders?.length > 0 || table.isOccupied)) {
+                    occupiedTableIds.add(table.id);
+                }
+            });
+            
+            // 2. Check all orders with KITCHEN or PLACED status
+            try {
+                const kitchenOrdersSnapshot = await sdk.db.collection("Orders")
+                    .where("currentStatus.label", "in", ["KITCHEN", "PLACED"])
+                    .get();
+                    
+                kitchenOrdersSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.tableId) {
+                        occupiedTableIds.add(data.tableId);
+                    }
+                });
+            } catch (err) {
+                console.error("Error fetching orders for table occupancy:", err);
+                // Continue execution even if this fails
+            }
+            
+            // 3. Check specifically for tables that might be reserved or marked as occupied in the profile
+            if (profileTables) {
+                profileTables.forEach(table => {
+                    if (table.isOccupied || table.status === 'occupied' || table.reserved) {
+                        occupiedTableIds.add(table.id || table.title);
+                    }
+                });
+            }
+            
+            console.log(`[handleAcceptOrder] Found ${occupiedTableIds.size} occupied tables:`, Array.from(occupiedTableIds));
+
             // Open a modal to select a table
             ModalManager.createCenterModal({
                 id: 'select-table-modal',
                 title: 'Select Table for Order',
                 content: `
                     <div class="p-4">
-                        <p class="mb-4 text-gray-700">Select a table to assign this QR order:</p>
+                        <p class="mb-4 text-gray-700">Select an available table to assign this QR order:</p>
+                        <div class="mb-3">
+                            <span class="inline-flex items-center mr-4">
+                                <span class="w-3 h-3 rounded-full bg-green-500 mr-1"></span>
+                                <span class="text-sm">Available</span>
+                            </span>
+                            <span class="inline-flex items-center">
+                                <span class="w-3 h-3 rounded-full bg-red-500 mr-1"></span>
+                                <span class="text-sm">Occupied</span>
+                            </span>
+                        </div>
                         <div id="table-selection-container" class="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[50vh] overflow-y-auto">
                             <div class="animate-pulse flex space-x-4">
                                 <div class="flex-1 space-y-4 py-1">
@@ -1233,71 +1300,135 @@ export default function Dashboard() {
                             return;
                         }
 
+                        // Refresh the occupied tables list one more time from the DOM
+                        // This is a fallback to ensure we capture the most current state
+                        try {
+                            const tableElements = document.querySelectorAll('[data-table-id]');
+                            tableElements.forEach(el => {
+                                const tableId = el.getAttribute('data-table-id');
+                                const hasOrderIndicator = el.querySelector('.order-indicator');
+                                const hasRedBg = el.classList.contains('bg-red-50') || 
+                                               el.classList.contains('bg-red-100') || 
+                                               el.classList.contains('border-red-200');
+                                
+                                if ((hasOrderIndicator || hasRedBg) && tableId) {
+                                    occupiedTableIds.add(tableId);
+                                }
+                            });
+                        } catch (domErr) {
+                            console.error("Error checking DOM for table status:", domErr);
+                        }
+
                         // Add tables to the container
                         profileTables.forEach(table => {
+                            const tableId = table.id || table.title;
+                            // Check if table is occupied from our comprehensive set
+                            const isOccupied = occupiedTableIds.has(tableId);
+                            
+                            // Determine table status and styling
+                            const statusColor = isOccupied ? 'red' : 'green';
+                            const statusText = isOccupied ? 'Occupied' : 'Available';
+                            const bgClass = isOccupied 
+                                ? 'bg-red-50 border-red-200' 
+                                : 'bg-gradient-to-br from-warm-bg to-white border-gray-200 hover:shadow-md';
+                            const cursorClass = isOccupied ? 'cursor-not-allowed' : 'cursor-pointer';
+                            
                             const tableElement = document.createElement('div');
-                            tableElement.className = 'bg-gradient-to-br from-warm-bg to-white rounded-xl p-3 border border-gray-200 cursor-pointer hover:shadow-md transition-all';
+                            tableElement.className = `rounded-xl p-3 border ${bgClass} ${cursorClass} transition-all`;
+                            tableElement.setAttribute('data-table-id', tableId);
                             tableElement.innerHTML = `
                                 <div class="flex items-center justify-between mb-2">
                                     <h3 class="text-sm font-bold truncate max-w-[70%]">${table.title}</h3>
                                     <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-white to-white/80 flex items-center justify-center shadow-sm">
-                                        <i class="ph ph-table text-red-500 text-sm"></i>
+                                        <i class="ph ph-table text-${statusColor}-500 text-sm"></i>
                                     </div>
+                                </div>
+                                <div class="flex items-center">
+                                    <span class="text-xs text-${statusColor}-500 font-medium ${isOccupied ? 'order-indicator' : ''}">
+                                        <i class="ph ph-circle-fill text-${statusColor}-500 mr-1 text-xs"></i>
+                                        ${statusText}
+                                    </span>
                                 </div>
                             `;
                             
-                            // Add click handler
-                            tableElement.addEventListener('click', async () => {
+                            // Add click handler only for available tables
+                            if (!isOccupied) {
+                                                            tableElement.addEventListener('click', async () => {
                                 try {
                                     modalControl.close();
                                     
                                     // Create status entry for kitchen processing
-            const statusEntry = {
-                label: 'KITCHEN',
-                date: new Date()
-            };
+                                    const statusEntry = {
+                                        label: 'KITCHEN',
+                                        date: new Date()
+                                    };
+
+                                    // Log using safeLog instead of console.log
+                                    safeLog.info(`[handleAcceptOrder] Assigning order ${orderId} to table ${tableId}`);
 
                                     // Update the order status AND assign to table
-            await orderRef.update({
-                                        tableId: table.id || table.title, // Use title as fallback id
-                currentStatus: statusEntry,
-                // Use SDK's fieldValue.arrayUnion instead of firebase.firestore
-                status: sdk.fieldValue.arrayUnion(statusEntry)
-            });
-
-            // Fetch the updated order to confirm changes
-            const updatedOrderDoc = await orderRef.get();
-            const updatedOrderData = updatedOrderDoc.data();
-
-            console.log(`[handleAcceptOrder] After update - Order ${orderId}:`, {
-                tableId: updatedOrderData.tableId || 'null/undefined',
-                priceVariant: updatedOrderData.priceVariant || 'null/undefined',
-                currentStatus: updatedOrderData.currentStatus,
-                statusCount: updatedOrderData.status?.length || 0
-            });
-
-            // Show success message
-                                    showToast(`Order accepted and assigned to table ${table.title}`);
-                                    console.log(`Order ${orderId} moved to KITCHEN status and assigned to table ${table.title}`);
-
-                                    // Extra check - force refresh of kitchen orders listener
-                                    console.log("Refreshing kitchen orders listener to ensure the updated order appears...");
-                                    if (kitchenOrdersUnsubscribe) {
-                                        kitchenOrdersUnsubscribe();
+                                    // Check if Firebase is available in the window object
+                                    if (window.firebase && window.firebase.firestore) {
+                                        // Use Firebase directly if available
+                                        await orderRef.update({
+                                            tableId: tableId,
+                                            currentStatus: statusEntry,
+                                            status: window.firebase.firestore.FieldValue.arrayUnion(statusEntry)
+                                        });
+                                    } else if (sdk.db && sdk.db.FieldValue && sdk.db.FieldValue.arrayUnion) {
+                                        // Try SDK's db.FieldValue if available
+                                        await orderRef.update({
+                                            tableId: tableId,
+                                            currentStatus: statusEntry,
+                                            status: sdk.db.FieldValue.arrayUnion(statusEntry)
+                                        });
+                                    } else {
+                                        // Fallback: Get current status array and update manually
+                                        const currentDoc = await orderRef.get();
+                                        const currentData = currentDoc.data();
+                                        const currentStatus = Array.isArray(currentData.status) ? currentData.status : [];
+                                        
+                                        await orderRef.update({
+                                            tableId: tableId,
+                                            currentStatus: statusEntry,
+                                            status: [...currentStatus, statusEntry]
+                                        });
                                     }
-                                    setupKitchenOrdersListener();
+
+                                    // Fetch the updated order to confirm changes
+                                    const updatedOrderDoc = await orderRef.get();
+                                    const updatedOrderData = updatedOrderDoc.data();
+
+                                    safeLog.info(`[handleAcceptOrder] After update - Order ${orderId} assigned to table ${tableId}`);
+
+                                    // Show success message
+                                    showToast(`Order accepted and assigned to table ${table.title}`);
+                                    
+                                    // Extra check - force refresh of kitchen orders listener
+                                    safeLog.info("Refreshing kitchen orders listener to ensure the updated order appears...");
+                                    
+                                    try {
+                                        if (kitchenOrdersUnsubscribe) {
+                                            kitchenOrdersUnsubscribe();
+                                        }
+                                        setupKitchenOrdersListener();
+                                    } catch (listenerErr) {
+                                        safeLog.warn("Error refreshing kitchen orders listener:", listenerErr);
+                                        // Continue execution even if listener refresh fails
+                                    }
                                 } catch (err) {
-                                    console.error('Error assigning order to table:', err);
-                                    showToast(`Failed to assign order to table: ${err.message}`, "error");
+                                    safeLog.error('Error assigning order to table:', err);
+                                    showToast(`Failed to assign order to table: ${err.message || 'Unknown error'}`, "error");
                                 } finally {
                                     setLoadingQrOrders(false);
                                 }
                             });
+                            }
                             
                             tableContainer.appendChild(tableElement);
                         });
                     } catch (err) {
-                        console.error('Error loading tables:', err);
+                        safeLog.error('Error loading tables:', err);
                         const tableContainer = document.getElementById('table-selection-container');
                         if (tableContainer) {
                             tableContainer.innerHTML = `
@@ -1311,7 +1442,7 @@ export default function Dashboard() {
                 }
             });
         } catch (err) {
-            console.error('Error accepting order:', err);
+            safeLog.error('Error accepting order:', err);
             showToast(`Failed to accept order: ${err.message}`, "error");
             setLoadingQrOrders(false);
         }
@@ -1336,22 +1467,41 @@ export default function Dashboard() {
             const orderRef = sdk.db.collection("Orders").doc(orderId);
 
             // Update with array union for atomicity
-            await orderRef.update({
-                currentStatus: statusEntry,
-                // Use a server-side array union to append the status without needing to read first
-                status: sdk.fieldValue.arrayUnion(statusEntry)
-            });
+            if (window.firebase && window.firebase.firestore) {
+                // Use Firebase directly if available
+                await orderRef.update({
+                    currentStatus: statusEntry,
+                    status: window.firebase.firestore.FieldValue.arrayUnion(statusEntry)
+                });
+            } else if (sdk.db && sdk.db.FieldValue && sdk.db.FieldValue.arrayUnion) {
+                // Try SDK's db.FieldValue if available
+                await orderRef.update({
+                    currentStatus: statusEntry,
+                    status: sdk.db.FieldValue.arrayUnion(statusEntry)
+                });
+            } else {
+                // Fallback: Get current status array and update manually
+                const currentDoc = await orderRef.get();
+                const currentData = currentDoc.data();
+                const currentStatus = Array.isArray(currentData.status) ? currentData.status : [];
+                
+                await orderRef.update({
+                    currentStatus: statusEntry,
+                    status: [...currentStatus, statusEntry]
+                });
+            }
 
             // Show success message
             showToast("Order rejected successfully");
         } catch (err) {
-            console.error('Error rejecting order:', err);
+            safeLog.error('Error rejecting order:', err);
             showToast(`Failed to reject order: ${err.message}`, "error");
         } finally {
             setLoadingQrOrders(false);
         }
     };
 
+    // Add releaseTable function after handlePrintBill
     const handlePrintBill = async (orderId) => {
         try {
             // Check if SDK is available
@@ -1388,7 +1538,7 @@ export default function Dashboard() {
                         throw new Error("Printing failed");
                     }
                 } catch (printError) {
-                    console.error('Error in BluetoothPrinting:', printError);
+                    safeLog.error('Error in BluetoothPrinting:', printError);
                     throw printError;
                 }
             } else if (sdk.kot && typeof sdk.kot.print === 'function') {
@@ -1402,8 +1552,97 @@ export default function Dashboard() {
                 showToast("Print simulation: Bill printed successfully");
             }
         } catch (err) {
-            console.error('Error printing bill:', err);
+            safeLog.error('Error printing bill:', err);
             showToast(`Failed to print bill: ${err.message}`, "error");
+        }
+    };
+
+    // Function to manually release/clear a table
+    const releaseTable = async (tableId, tableName) => {
+        try {
+            if (!tableId) {
+                throw new Error("Table ID is required");
+            }
+            
+            if (!sdk || !sdk.db) {
+                throw new Error("SDK is not available");
+            }
+            
+            // Show confirmation dialog
+            if (!confirm(`Are you sure you want to release table ${tableName || tableId}? This will remove all order assignments.`)) {
+                return;
+            }
+            
+            try {
+                // Log using try-catch to avoid console.error issues
+                console.log(`[Dashboard] Releasing table ${tableId}`);
+            } catch (logErr) {}
+            
+            // 1. Find all orders assigned to this table with KITCHEN status
+            const ordersSnapshot = await sdk.db.collection("Orders")
+                .where("tableId", "==", tableId)
+                .where("currentStatus.label", "==", "KITCHEN")
+                .get();
+                
+            if (ordersSnapshot.empty) {
+                try {
+                    // Log using try-catch to avoid console.error issues
+                    console.log(`[Dashboard] No active orders found for table ${tableId}`);
+                } catch (logErr) {}
+                
+                showToast(`Table ${tableName || tableId} released (no active orders found)`);
+                
+                // Force refresh kitchen orders listener to update UI
+                if (kitchenOrdersUnsubscribe) {
+                    kitchenOrdersUnsubscribe();
+                }
+                setupKitchenOrdersListener();
+                return;
+            }
+            
+            // 2. Update each order to remove table assignment without using batch
+            let orderCount = 0;
+            const updatePromises = [];
+            
+            ordersSnapshot.forEach(doc => {
+                const orderRef = sdk.db.collection("Orders").doc(doc.id);
+                // Add each update operation to our promises array
+                updatePromises.push(
+                    orderRef.update({
+                        tableId: null,
+                        // Don't change the status, just remove the table assignment
+                    })
+                );
+                orderCount++;
+            });
+            
+            // Wait for all updates to complete
+            await Promise.all(updatePromises);
+            
+            try {
+                // Log using try-catch to avoid console.error issues
+                console.log(`[Dashboard] Released ${orderCount} orders from table ${tableId}`);
+            } catch (logErr) {}
+            
+            showToast(`Table ${tableName || tableId} released successfully (${orderCount} orders)`);
+            
+            // 3. Force refresh kitchen orders listener to update UI
+            if (kitchenOrdersUnsubscribe) {
+                kitchenOrdersUnsubscribe();
+            }
+            setupKitchenOrdersListener();
+            
+        } catch (err) {
+            // Use try-catch to avoid console.error issues
+            try {
+                const errorMsg = `[Dashboard] Error releasing table ${tableId}: ${err.message || 'Unknown error'}`;
+                // Use alert instead of console.error
+                setTimeout(() => {
+                    console.log(errorMsg);
+                }, 0);
+            } catch (logErr) {}
+            
+            showToast(`Failed to release table: ${err.message || 'Unknown error'}`, "error");
         }
     };
 
@@ -4114,6 +4353,7 @@ export default function Dashboard() {
                                                     duration={table.duration}
                                                     onTap={() => handleRoomClick(table.id, null)}
                                                     onLongPress={() => showRenameRoomModal(table.id, null)}
+                                                    onRelease={releaseTable}
                                                     compact={true}
                                                 />
                                             </div>

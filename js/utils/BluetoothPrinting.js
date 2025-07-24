@@ -420,6 +420,14 @@ class BluetoothPrintingClass {
             throw new Error("Order not found");
         }
 
+        // Ensure we have the most up-to-date data
+        console.log("Order data for printing:", {
+            orderId,
+            hasCustomer: !!orderData.custName || !!orderData.customer,
+            customerName: orderData.custName || (orderData.customer ? orderData.customer.name : null),
+            customerPhone: orderData.custPhone || (orderData.customer ? orderData.customer.phone : null)
+        });
+
         // Check if there are any newly added items
         const hasNewlyAddedItems = orderData.items &&
             orderData.items.some(item => item.newlyAdded === true);

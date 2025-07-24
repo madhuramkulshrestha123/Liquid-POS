@@ -350,12 +350,20 @@ export class PrintTemplate {
      * @private
      */
     _prepareVariablesFromOrder(orderData, seller) {
+        // Log customer information for debugging
+        console.log("Preparing variables with customer info:", {
+            custName: orderData.custName,
+            custPhone: orderData.custPhone,
+            customer: orderData.customer
+        });
+        
+        // Use the Uncle Cafe logo from Firebase
+        const brandLogoUrl = "https://firebasestorage.googleapis.com/v0/b/frihbi-app.appspot.com/o/images%2F2023-03-26T21%3A42%3A17.043845.jpg?alt=media&token=db68fb82-39b1-49ff-898d-9308621bf63e";
+        
         const variables = {
             // Basic business info
-            businessName: `${seller.businessName || 'Your Business'}`,
-            logo: seller.logo ?
-                `<div class="text-center"><img src="${seller.logo}" alt="Logo" class="max-w-[200px] max-h-[60px] mx-auto"></div>` :
-                '<div class="text-center"><i class="ph ph-storefront text-2xl"></i></div>',
+            businessName: `${seller.businessName || 'Uncle Cafe'}`,
+            logo: `<div class="text-center"><img src="${brandLogoUrl}" alt="Uncle Cafe Logo" class="max-w-[200px] max-h-[60px] mx-auto"></div>`,
             phone: seller.phone ? `${seller.phone}` : '',
             address: seller.address ? `${seller.address}` : '',
             storeLink: seller.website ? `${seller.website}` : '',
@@ -365,12 +373,14 @@ export class PrintTemplate {
             billNo: `${orderData.billNo || orderData.id?.substring(0, 8) || 'N/A'}`,
             orderSource: `${orderData.priceVariant || 'Default'}`,
             payMode: `${orderData.payMode || 'CASH'}`,
+            paymentStatus: orderData.paid === false ? 'Unpaid' : 'Paid',
             timestamp: `${new Date(orderData.date?.toDate ? orderData.date.toDate() : orderData.date || new Date()).toLocaleString()}`,
             cut: '<div class="border-t border-dashed my-1 border-gray-400"></div>',
             upiQR: orderData.upiQR ? `<div class="text-center"><i class="ph ph-qr-code text-4xl"></i></div>` : '',
             instructions: orderData.instructions ? `Instructions:\n${orderData.instructions}` : '',
-            customerName: orderData.customer?.name || orderData.custName || '',
-            customerPhone: orderData.customer?.phone || orderData.custPhone || '',
+            customerName: orderData.custName || (orderData.customer?.name) || 'Guest',
+            customerPhone: orderData.custPhone || (orderData.customer?.phone) || 'NOT AVAILABLE',
+            thankYouMessage: 'Thank you for Visiting',
 
             // Add bulk tax update hashtag if present
             bulkTaxHashtag: orderData.taxUpdateInfo?.hashtag || ''
@@ -406,6 +416,7 @@ export class PrintTemplate {
             let hasBulkTaxUpdate = false;
             let bulkTaxHashtag = null;
             let total = 0; // Initialize total variable
+            let taxesTotal = 0; // Track total taxes
 
             // Use ChargesCalculator for consistent charge calculations
             if (orderData.charges && Array.isArray(orderData.charges)) {
@@ -418,6 +429,7 @@ export class PrintTemplate {
                 if (chargesCalculation && chargesCalculation.calculatedCharges) {
                     chargesCalculation.calculatedCharges.forEach(charge => {
                         chargesHtml += `${charge.displayName}: ${charge.calculatedAmount.toFixed(2)}\n`;
+                        taxesTotal += charge.calculatedAmount; // Add to taxes total
 
                         // Check if this charge has a bulk tax update hashtag
                         if (charge.bulkTaxHashtag) {
@@ -436,6 +448,7 @@ export class PrintTemplate {
                 }
             }
             variables.charges = chargesHtml;
+            variables.taxesTotal = `${taxesTotal.toFixed(2)}`; // Store total taxes
 
             // Handle total
             if (!total) {
@@ -460,8 +473,8 @@ export class PrintTemplate {
     _generateBillItemsList(items) {
         let html = `<div class="flex w-full font-bold border-b border-dashed border-gray-400 text-xs m-0 p-0">
             <div class="w-[10%]">Qty</div>
-            <div class="w-[70%]">Item</div>
-            <div class="w-[20%] text-right">Amt</div>
+            <div class="w-[70%] text-center">Item</div>
+            <div class="w-[20%] text-right">MRP</div>
         </div>`;
 
         // Add items
@@ -473,7 +486,7 @@ export class PrintTemplate {
 
             html += `<div class="flex w-full text-xs">
                 <div class="w-[10%]">${quantity}</div>
-                <div class="w-[70%]">${itemName}</div>
+                <div class="w-[70%] text-center">${itemName}</div>
                 <div class="w-[20%] text-right">${amount.toFixed(2)}</div>
             </div>`;
 
@@ -550,20 +563,52 @@ export class PrintTemplate {
     _createDefaultBillSections(orderData = {}) {
         const sections = [];
 
-        // Header section
+        // Logo section (centered at top)
         sections.push(new PrintSection({
-            template: `${orderData.gstEnabled ? 'TAX INVOICE' : 'BILL/RECEIPT'}\n#businessName\n#address\nPhone: #phone\nWeb: #storeLink\nGST: #gstIN`,
+            template: `#logo`,
+            alignment: 'TextAlign.center',
+            fontSize: 24,
+            isBold: false
+        }));
+        
+        // Brand Name section (centered below logo)
+        sections.push(new PrintSection({
+            template: `#businessName`,
             alignment: 'TextAlign.center',
             fontSize: 24,
             isBold: true
         }));
 
-        // Order details section
+        // Divider line
         sections.push(new PrintSection({
-            template: `Bill #: #billNo\nDate: #timestamp\nCustomer: #customerName\nPhone: #customerPhone\n${orderData.tableId ? `Table: ${orderData.tableId}` : ''}\nOrder from: #orderSource`,
+            template: `#cut`,
+            alignment: 'TextAlign.center',
+            fontSize: 20,
+            isBold: false
+        }));
+
+        // Bill details section
+        sections.push(new PrintSection({
+            template: `Bill No: #billNo\nOrder from: #orderSource`,
             alignment: 'TextAlign.left',
             fontSize: 20,
             isBold: false
+        }));
+
+        // Divider line
+        sections.push(new PrintSection({
+            template: `#cut`,
+            alignment: 'TextAlign.center',
+            fontSize: 20,
+            isBold: false
+        }));
+
+        // KITCHEN ORDER TICKET header
+        sections.push(new PrintSection({
+            template: `KITCHEN ORDER TICKET`,
+            alignment: 'TextAlign.center',
+            fontSize: 22,
+            isBold: true
         }));
 
         // Items section - use itemsListText for printer commands
@@ -574,28 +619,60 @@ export class PrintTemplate {
             isBold: false
         }));
 
-        // Totals section
+        // Divider line
         sections.push(new PrintSection({
-            template: `Sub Total: #subtotal\n${orderData.discount && parseFloat(orderData.discount) > 0 ? 'Discount: #discount\n' : ''}#charges\nTOTAL: #total${orderData.taxUpdateInfo?.hashtag ? '\nTax ID: #bulkTaxHashtag' : ''}`,
+            template: `#cut`,
+            alignment: 'TextAlign.center',
+            fontSize: 20,
+            isBold: false
+        }));
+
+        // Taxes section
+        sections.push(new PrintSection({
+            template: `Sub Total: #subtotal\n${orderData.discount && parseFloat(orderData.discount) > 0 ? 'Discount: #discount\n' : ''}#charges\nTaxes Total: #taxesTotal`,
             alignment: 'TextAlign.right',
             fontSize: 20,
+            isBold: false
+        }));
+
+        // Grand Total section (bold)
+        sections.push(new PrintSection({
+            template: `GRAND TOTAL: #total${orderData.taxUpdateInfo?.hashtag ? '\nTax ID: #bulkTaxHashtag' : ''}`,
+            alignment: 'TextAlign.right',
+            fontSize: 22,
             isBold: true
         }));
 
-        // Payment section
+        // Divider line
         sections.push(new PrintSection({
-            template: `Payment Mode: #payMode\n${orderData.notes ? orderData.notes : ''}`,
+            template: `#cut`,
+            alignment: 'TextAlign.center',
+            fontSize: 20,
+            isBold: false
+        }));
+
+        // Payment info and customer details
+        sections.push(new PrintSection({
+            template: `Payment mode: #payMode\nPayment status: #paymentStatus\nCust name: #customerName\nCust numb: #customerPhone`,
             alignment: 'TextAlign.left',
             fontSize: 20,
             isBold: false
         }));
 
-        // Footer
+        // Date and time
         sections.push(new PrintSection({
-            template: `Thank You!\nVisit Again\n#storeLink`,
-            alignment: 'TextAlign.center',
+            template: `Date: #timestamp`,
+            alignment: 'TextAlign.left',
             fontSize: 20,
             isBold: false
+        }));
+
+        // Thank you message
+        sections.push(new PrintSection({
+            template: `#thankYouMessage`,
+            alignment: 'TextAlign.center',
+            fontSize: 22,
+            isBold: true
         }));
 
         return sections;

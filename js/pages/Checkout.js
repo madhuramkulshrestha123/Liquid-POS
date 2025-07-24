@@ -4,12 +4,14 @@ import { OrderStatus } from '../models/OrderStatus.js';
 import { showToast } from '../utils.js';
 import { UserSession } from '../utils/UserSession.js';
 import { sdk } from '../sdk.js';
+import { BluetoothPrinting } from '../utils/BluetoothPrinting.js';
 
 // Checkout Component for Shopto
 export function CheckoutSheet({ order, onClose }) {
     const [paymentMode, setPaymentMode] = useState('Cash');
     const [showContent, setShowContent] = useState(true);
     const [customer, setCustomer] = useState(null);
+    const [isPrinting, setIsPrinting] = useState(false);
 
     // Handle checkout process
     const handleCheckout = async (mode) => {
@@ -189,6 +191,44 @@ export function CheckoutSheet({ order, onClose }) {
         </div>
     );
 
+    // Print bill button
+    const handlePrintBill = async () => {
+        if (!order || !order.id) {
+            showToast("No order available to print", "error");
+            return;
+        }
+
+        setIsPrinting(true);
+        try {
+            // Try Bluetooth printing if available
+            if (BluetoothPrinting && BluetoothPrinting.isSupported()) {
+                const printerAlreadyConnected = BluetoothPrinting.connected && BluetoothPrinting.characteristic;
+                
+                if (printerAlreadyConnected) {
+                    showToast("Printing bill using connected printer...", "info");
+                } else if (BluetoothPrinting.lastConnectedDevice) {
+                    showToast(`Connecting to printer ${BluetoothPrinting.lastConnectedDevice.name}...`, "info");
+                } else {
+                    showToast("Select a printer to print bill", "info");
+                }
+
+                // Get order channel and payment mode for proper template variables
+                const paymentMode = order.payMode || 'CASH';
+                const channel = order.priceVariant || 'Default';
+                
+                await BluetoothPrinting.printBill(order.id, paymentMode, false, channel);
+                showToast("Bill printed successfully", "success");
+            } else {
+                showToast("Printing service not available on this device", "error");
+            }
+        } catch (error) {
+            console.error('Error printing bill:', error);
+            showToast(`Failed to print bill: ${error.message}`, "error");
+        } finally {
+            setIsPrinting(false);
+        }
+    };
+
     return (
         <div className="bg-white rounded-t-xl max-h-[90vh] overflow-y-auto">
             <div className="p-4">
@@ -206,6 +246,18 @@ export function CheckoutSheet({ order, onClose }) {
                 <Summary />
                 <CustomerSection />
                 <PaymentButtons />
+                
+                {/* Print Bill Button */}
+                <div className="mt-4 px-4">
+                    <button
+                        onClick={handlePrintBill}
+                        disabled={isPrinting}
+                        className="w-full py-3 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 flex items-center justify-center gap-2"
+                    >
+                        <i className="ph ph-printer text-lg"></i>
+                        <span>{isPrinting ? 'Printing...' : 'Print Bill'}</span>
+                    </button>
+                </div>
             </div>
         </div>
     );

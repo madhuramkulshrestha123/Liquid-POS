@@ -5,7 +5,7 @@ import { BluetoothPrinting } from '../utils/BluetoothPrinting.js';
 import { UserSession } from '../utils/UserSession.js';
 
 // Table Card Component
-export function TableCard({ title, orders, duration, status, onTap, onLongPress, compact = false }) {
+export function TableCard({ title, orders, duration, status, onTap, onLongPress, compact = false, onRelease }) {
     // Calculate color based on last placed date (similar to getColor in Flutter)
     const getColor = (duration) => {
         if (!duration) return {
@@ -58,6 +58,7 @@ export function TableCard({ title, orders, duration, status, onTap, onLongPress,
                     e.preventDefault();
                     onLongPress && onLongPress();
                 }}
+                data-table-id={title}
             >
                 <div className="flex items-center justify-between mb-1.5 md:mb-2">
                     <h3 className="text-xs md:text-sm font-bold line-clamp-1 leading-tight max-w-[70%]">{title}</h3>
@@ -67,7 +68,7 @@ export function TableCard({ title, orders, duration, status, onTap, onLongPress,
                 </div>
 
                 <div className="mt-auto">
-                    <div className={`text-2xs md:text-xs font-medium px-1.5 py-0.5 md:px-2 md:py-1 rounded-full mb-0.5 md:mb-1 inline-flex items-center ${hasOrders ? 'bg-gradient-to-r from-red-100 to-red-50 text-red-600' : 'bg-gradient-to-r from-gray-100 to-gray-50 text-gray-500'}`}>
+                    <div className={`text-2xs md:text-xs font-medium px-1.5 py-0.5 md:px-2 md:py-1 rounded-full mb-0.5 md:mb-1 inline-flex items-center ${hasOrders ? 'bg-gradient-to-r from-red-100 to-red-50 text-red-600 order-indicator' : 'bg-gradient-to-r from-gray-100 to-gray-50 text-gray-500'}`}>
                         {hasOrders ? (
                             <i className="ph ph-shopping-bag text-2xs md:text-xs mr-0.5 md:mr-1"></i>
                         ) : (
@@ -83,6 +84,22 @@ export function TableCard({ title, orders, duration, status, onTap, onLongPress,
                         </div>
                     )}
                 </div>
+                
+                {onRelease && (hasOrders || true) && (
+                    <div className="mt-2 flex justify-end">
+                        <button 
+                            onClick={(e) => { 
+                                e.stopPropagation(); 
+                                e.preventDefault();
+                                onRelease(title, title); 
+                            }}
+                            className="text-2xs md:text-xs text-gray-500 hover:text-blue-500 bg-white rounded-full w-5 h-5 md:w-6 md:h-6 flex items-center justify-center shadow-sm"
+                            title="Release table"
+                        >
+                            <i className="ph ph-key"></i>
+                        </button>
+                    </div>
+                )}
             </div>
         );
     }
@@ -96,6 +113,7 @@ export function TableCard({ title, orders, duration, status, onTap, onLongPress,
                 e.preventDefault();
                 onLongPress && onLongPress();
             }}
+            data-table-id={title}
         >
             <div className="flex items-center justify-between mb-3">
                 <h3 className="text-lg font-bold truncate max-w-[70%]">{title}</h3>
@@ -105,7 +123,7 @@ export function TableCard({ title, orders, duration, status, onTap, onLongPress,
             </div>
 
             <div className="mt-auto">
-                <div className={`text-sm font-medium px-3 py-1.5 rounded-full mb-2 inline-flex items-center ${hasOrders ? 'bg-gradient-to-r from-red-100 to-red-50 text-red-600' : 'bg-gradient-to-r from-gray-100 to-gray-50 text-gray-500'}`}>
+                <div className={`text-sm font-medium px-3 py-1.5 rounded-full mb-2 inline-flex items-center ${hasOrders ? 'bg-gradient-to-r from-red-100 to-red-50 text-red-600 order-indicator' : 'bg-gradient-to-r from-gray-100 to-gray-50 text-gray-500'}`}>
                     {hasOrders ? (
                         <i className="ph ph-shopping-bag text-xs mr-1.5"></i>
                     ) : (
@@ -121,6 +139,22 @@ export function TableCard({ title, orders, duration, status, onTap, onLongPress,
                     </div>
                 )}
             </div>
+            
+            {onRelease && (hasOrders || true) && (
+                <div className="mt-3 flex justify-end">
+                    <button 
+                        onClick={(e) => { 
+                            e.stopPropagation(); 
+                            e.preventDefault();
+                            onRelease(title, title); 
+                        }}
+                        className="text-xs text-gray-500 hover:text-blue-500 bg-white rounded-full w-7 h-7 flex items-center justify-center shadow-sm"
+                        title="Release table"
+                    >
+                        <i className="ph ph-key"></i>
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
